@@ -1,0 +1,9 @@
+skyfield
+sgp4
+astropy
+numpy
+pandas
+scipy
+matplotlib
+plotly
+jupyter
