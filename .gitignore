@@ -5,4 +5,12 @@ venv/
 .ipynb_checkpoints/
 *.npy
 data/tle_*.txt
+data/kelvins/
+# generated run outputs (the curated showcase lives in docs/)
+out/
 .DS_Store
+
+# skyfield download cache in notebooks
+notebooks/gp.php
+notebooks/*.bsp
+notebooks/*.html
