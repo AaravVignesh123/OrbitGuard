@@ -27,6 +27,7 @@ class PipelineResult:
     meta: dict
     sats_by_index: dict
     catalog: _catalog.Catalog
+    cube: object = None  # PositionCube — positions for the globe visualization
 
 
 def run(
@@ -94,4 +95,5 @@ def run(
     sats_by_index.update({ev.j: cat.sats[ev.j] for ev in events})
 
     log(f"\nDone in {meta['runtime_s']} s.")
-    return PipelineResult(ranked=ranked, meta=meta, sats_by_index=sats_by_index, catalog=cat)
+    return PipelineResult(ranked=ranked, meta=meta, sats_by_index=sats_by_index,
+                          catalog=cat, cube=cube)

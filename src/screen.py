@@ -96,6 +96,7 @@ def _run_once(args, *, force_download: bool) -> None:
     payload = report.build_json(
         result.ranked, meta=result.meta,
         sats_by_index=result.sats_by_index, top_geometry=args.top_geometry,
+        cube=result.cube,
     )
     report.write_json(payload, json_path)
     # Stable 'latest' copies (fixed filenames for the dashboard, watch loop,

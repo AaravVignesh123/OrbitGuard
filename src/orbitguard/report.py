@@ -60,12 +60,53 @@ def _orbit_arc(sat, tca_dt: _dt.datetime, minutes: float, step_s: float, ts) -> 
     return p.T.tolist()
 
 
+def build_globe(cube, *, sample_n: int = 260, path_points: int = 48) -> dict:
+    """Sample real orbit paths from the position cube for the 3D globe.
+
+    We take an even sample of the valid objects and, for each, downsample the
+    first ~orbital-period of its propagated positions into a short polyline
+    (ECI km). The web globe scales these to Earth radius = 1 and animates each
+    satellite along its own path. Rounded to whole km — invisible at globe scale,
+    and keeps the payload small.
+    """
+    pos = cube.positions          # (N, T, 3) km, GCRS/ECI
+    valid = np.where(cube.valid)[0]
+    N, T, _ = pos.shape
+    # ~one LEO period at 60 s steps ≈ 96 samples; clamp to the window.
+    path_len = min(96, T)
+    pick = np.linspace(0, path_len - 1, min(path_points, path_len)).astype(int)
+
+    if len(valid) > sample_n:
+        sel = valid[np.linspace(0, len(valid) - 1, sample_n).astype(int)]
+    else:
+        sel = valid
+
+    sats = []
+    for idx in sel:
+        path = pos[idx, :path_len, :][pick]          # (path_points, 3)
+        if not np.all(np.isfinite(path)):
+            continue
+        r0 = float(np.linalg.norm(path[0]))
+        alt = r0 - 6371.0
+        # colour band: LEO / MEO / high
+        band = 0 if alt < 2000 else (1 if alt < 25000 else 2)
+        sats.append({"p": np.round(path).astype(int).tolist(), "b": band})
+
+    return {
+        "earth_radius_km": 6371.0,
+        "count_total": int(cube.valid.sum()),
+        "sample_n": len(sats),
+        "sats": sats,
+    }
+
+
 def build_json(
     ranked: List[RankedEvent],
     *,
     meta: dict,
     sats_by_index: Optional[dict] = None,
     top_geometry: int = 5,
+    cube=None,
     ts=None,
 ) -> dict:
     """Build the dashboard payload. ``sats_by_index`` maps catalog index -> sat.
@@ -100,7 +141,7 @@ def build_json(
                 }
             )
 
-    return {
+    payload = {
         "meta": meta,
         "summary": {
             "n_events": len(ranked),
@@ -111,6 +152,9 @@ def build_json(
         "events": df.to_dict(orient="records"),
         "geometry": geometry,
     }
+    if cube is not None:
+        payload["globe"] = build_globe(cube)
+    return payload
 
 
 def _single_time(dt: _dt.datetime, ts):
