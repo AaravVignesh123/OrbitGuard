@@ -85,10 +85,20 @@ python src/screen.py --group starlink --hours 6 --threshold 5 --max-objects 1500
 
 ## The dashboard
 
-`dashboard_latest.html` is a single file with Plotly inlined — no server, no
-network. It shows summary stat cards, a rotatable 3D scene of the top events
-(both orbit arcs + the close-approach point + the miss-distance line, switchable
-via a dropdown), and the ranked conjunction table.
+`dashboard_latest.html` (mirrored to [`docs/index.html`](docs/index.html) for
+GitHub Pages) is a single self-contained file with Plotly inlined — no server, no
+network. It's built as a four-tab **product site**, not just a report:
+
+- **Overview** — what OrbitGuard is, why orbital conjunctions matter, who it's for
+  (operators, agencies like NASA/ESA, analysts), and v1-now vs. what's next.
+- **Live Report** — summary stat cards, a rotatable 3D scene of the top events
+  (both orbit arcs + the close-approach point + the miss-distance line, switchable
+  via a dropdown), and the ranked conjunction table.
+- **How it works** — the six-stage pipeline, explained.
+- **Roadmap** — v1 → ML risk → autonomy → showcase.
+
+**Host it:** push, then enable GitHub Pages (*Settings → Pages → Branch: `main`,
+Folder: `/docs`*) — it goes live at `https://<user>.github.io/OrbitGuard`.
 
 ## Validation
 
