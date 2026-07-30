@@ -13,7 +13,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from orbitguard import screen, risk, refine  # noqa: E402
+from orbitguard import screen, risk, refine, focus  # noqa: E402
 from orbitguard.propagate import PositionCube, build_time_grid  # noqa: E402
 from skyfield.api import EarthSatellite, load  # noqa: E402
 
@@ -89,6 +89,43 @@ def test_risk_ranking_orders_scary_first():
     assert ranked[0].event.miss_km == 0.5   # scariest first
     assert ranked[-1].event.miss_km == 9.0  # least scary last
     assert ranked[0].rank == 1
+
+
+def _mk_ranked(pairs):
+    """pairs: list of (name_i, norad_i, name_j, norad_j, miss, speed)."""
+    evs = []
+    for ni, ii, nj, jj, miss, spd in pairs:
+        evs.append(refine.RefinedEvent(
+            i=ii, j=jj, name_i=ni, name_j=nj, norad_i=ii, norad_j=jj,
+            tca_utc=_dt.datetime(2026, 1, 1), miss_km=miss, coarse_miss_km=miss,
+            rel_speed_kms=spd, alt_km=500.0))
+    return risk.rank_events(evs)
+
+
+def test_focus_by_name_and_norad():
+    ranked = _mk_ranked([
+        ("STARLINK-1", 101, "DEBRIS-A", 900, 0.5, 12.0),
+        ("STARLINK-1", 101, "DEBRIS-B", 901, 3.0, 6.0),
+        ("ONEWEB-9", 202, "DEBRIS-C", 902, 1.0, 8.0),
+    ])
+    by_name = focus.threats_to(ranked, "starlink-1")
+    by_id = focus.threats_to(ranked, "101")
+    assert len(by_name) == 2 and len(by_id) == 2
+    # risk-sorted: the 0.5 km / 12 km/s pass outranks the 3 km / 6 km/s one
+    assert by_name[0].event.miss_km == 0.5
+    assert focus.threats_to(ranked, "does-not-exist") == []
+
+
+def test_most_threatened_leaderboard():
+    ranked = _mk_ranked([
+        ("SAT-A", 1, "SAT-B", 2, 0.3, 13.0),   # very scary
+        ("SAT-C", 3, "SAT-D", 4, 8.0, 3.0),    # mild
+    ])
+    board = focus.most_threatened(ranked, top=10)
+    # every object appears once, scariest object first
+    assert board[0]["norad"] in (1, 2)
+    assert {row["norad"] for row in board} == {1, 2, 3, 4}
+    assert board[0]["miss_km"] == 0.3
 
 
 def test_refinement_beats_coarse_grid():

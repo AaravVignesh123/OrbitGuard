@@ -74,8 +74,40 @@ Outputs land in `./out/`:
 --step         coarse time step in seconds                            (default: 60)
 --threshold    coarse screening distance in km                        (default: 10)
 --max-objects  cap catalog size for a quick run
+--focus        pivot onto one object (name substring or NORAD id)
+--watch        continuous mode: re-pull fresh TLEs + re-run every N min
+--docs         also write docs/index.html (the GitHub Pages source)
 --no-dashboard skip the HTML build
 ```
+
+### Per-satellite view (operator mode)
+
+The global ranking is pair-centric; operators care about *their* asset. Pivot
+the same risk ranking onto one object:
+
+```bash
+python src/screen.py --group active --focus STARLINK-6106   # by name
+python src/screen.py --group active --focus 57154           # by NORAD id
+```
+
+It prints and saves that object's threat list (`out/threats_<focus>.csv`), ranked
+by risk. The dashboard's **Live Report** tab also has a live focus filter — type a
+satellite name or NORAD id to see its personal threat list instantly.
+
+### Continuous tracking
+
+TLEs aren't real-time — CelesTrak refreshes each object a few times per day, and
+SGP4 fills in the motion between updates. So "live tracking" means *re-pulling the
+freshest elements and re-screening on an interval*. Built in:
+
+```bash
+# re-download fresh TLEs and re-screen every 3 h, refreshing the hosted page
+python src/screen.py --group active --hours 6 --watch 180 --docs
+```
+
+Shorter windows re-run more often = the most accurate picture (propagation error
+grows with time from the TLE epoch). For unattended runs, a cron entry calling the
+same command periodically works equally well.
 
 Fast demo run:
 
@@ -140,8 +172,10 @@ tests/                      correctness tests (KD-tree vs brute force, refinemen
 ## Roadmap
 
 - **Phase 3 · ML risk model** — train on the ESA Kelvins Collision Avoidance
-  Challenge CDM dataset to predict whether a conjunction escalates. *(scaffold in
-  `src/orbitguard/ml/`)*
+  Challenge CDM dataset to predict whether a conjunction escalates. Dataset access
+  + a ready-to-train **bootstrap dataset** are set up now — see
+  [`src/orbitguard/ml/README.md`](src/orbitguard/ml/README.md) and
+  [`data/ml_bootstrap_dataset.csv`](data/ml_bootstrap_dataset.csv).
 - **Phase 4 · Autonomy** — for top-risk events, propose a small avoidance Δv and
   show the improved miss distance.
 - **Phase 5 · Showcase** — polished writeup + demo.

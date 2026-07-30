@@ -16,6 +16,7 @@ str.format) so the CSS braces stay readable.
 from __future__ import annotations
 
 import html
+import json
 from typing import List
 
 import numpy as np
@@ -160,7 +161,8 @@ def _table(events: List[dict], top: int = 50) -> str:
             f"<td class='mono num'>{e['alt_km']:.0f}</td>"
             f"<td>{chip}</td></tr>"
         )
-    return f"<table>{head}{''.join(rows)}</table>"
+    return (f"<table><thead>{head}</thead>"
+            f"<tbody id='ogbody'>{''.join(rows)}</tbody></table>")
 
 
 def _ticker(events: List[dict]) -> str:
@@ -598,6 +600,16 @@ h1,h2,h3 { letter-spacing:-.02em; }
 .phase.done .phase-tag { color:var(--green); } .phase.next .phase-tag { color:var(--accent); }
 .phase-body h3 { font-size:17px; margin:5px 0 0; } .phase-body p { color:var(--dim); font-size:14px; margin:5px 0 0; max-width:720px; }
 
+/* focus bar */
+.focusbar { display:flex; align-items:center; gap:10px; border:1px solid var(--hair2); border-radius:11px;
+  background:var(--bg2); padding:10px 14px; margin:4px 0 12px; color:var(--faint); }
+.focusbar svg { flex:none; color:var(--accent); }
+.focusbar input { flex:1; background:transparent; border:0; outline:none; color:var(--ink); font-family:var(--mono);
+  font-size:13px; letter-spacing:.01em; }
+.focusbar input::placeholder { color:var(--faint); }
+.focusbar:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px rgba(92,200,255,.12); }
+.focusinfo { font-family:var(--mono); font-size:11px; color:var(--dim); white-space:nowrap; flex:none; }
+
 /* panels + table */
 .panel { border:1px solid var(--hair); border-radius:14px; padding:14px; background:var(--panel); margin-top:8px; }
 .meta { color:var(--faint); font-size:12px; font-family:var(--mono); letter-spacing:.04em; margin:2px 0 16px; }
@@ -663,6 +675,13 @@ footer { margin-top:72px; color:var(--faint); font-size:12px; font-family:var(--
     <section>
       <div class="sec-head" data-reveal style="border:0;padding:0;margin-bottom:14px">
         <div class="kicker"><span class="sec-no">▤</span>RANKED CONJUNCTIONS</div></div>
+      <div class="focusbar" data-reveal>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="ogfocus" type="text" autocomplete="off" spellcheck="false"
+          placeholder="Focus on a satellite — name or NORAD id (e.g. STARLINK-6106 or 57154)">
+        <span id="ogfocusinfo" class="focusinfo"></span>
+      </div>
       <div class="panel" data-reveal>__TABLE__</div>
       <div class="note" data-reveal>Risk is a v1 proxy = closing&nbsp;speed / (miss&nbsp;distance + 0.2&nbsp;km),
       log-scaled to 0–100 — higher means a small miss <em>and</em> a high closing speed. It is not a formal
@@ -680,9 +699,43 @@ footer { margin-top:72px; color:var(--faint); font-size:12px; font-family:var(--
   </footer>
 </div>
 
+<script>var OG_EVENTS = __EVENTS_JSON__;</script>
 <script>
 (function(){
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---- per-satellite focus filter (operator view) ----
+  var body = document.getElementById('ogbody');
+  var inp = document.getElementById('ogfocus');
+  var info = document.getElementById('ogfocusinfo');
+  function esc(s){ var d=document.createElement('div'); d.textContent=String(s); return d.innerHTML; }
+  function rowHtml(e){
+    var hue = Math.round(48 - 0.48*Math.min(e.rs,100));
+    return '<tr><td class="rank">'+e.r+'</td>'+
+      '<td>'+esc(e.a)+'<span class="norad">NORAD '+e.na+'</span></td>'+
+      '<td>'+esc(e.b)+'<span class="norad">NORAD '+e.nb+'</span></td>'+
+      '<td class="mono">'+e.t+'</td>'+
+      '<td class="mono num">'+e.m.toFixed(3)+'</td>'+
+      '<td class="mono num">'+e.v.toFixed(2)+'</td>'+
+      '<td class="mono num">'+Math.round(e.al)+'</td>'+
+      '<td><span class="risk" style="--rh:'+hue+'">'+Math.round(e.rs)+'</span></td></tr>';
+  }
+  function render(list, limit){ var out='', n=Math.min(list.length, limit||50);
+    for(var i=0;i<n;i++) out+=rowHtml(list[i]); if(body) body.innerHTML=out; }
+  function applyFocus(){
+    if(!body || !OG_EVENTS) return;
+    var q=(inp.value||'').trim().toLowerCase();
+    if(!q){ render(OG_EVENTS,50);
+      info.textContent = OG_EVENTS.length.toLocaleString('en-US')+' conjunctions · top 50 by risk'; return; }
+    var digit=/^\d+$/.test(q);
+    var m=OG_EVENTS.filter(function(e){ return digit ? (e.na==+q||e.nb==+q)
+      : (String(e.a).toLowerCase().indexOf(q)>=0 || String(e.b).toLowerCase().indexOf(q)>=0); });
+    render(m, 400);
+    if(m.length){ var closest=Math.min.apply(null, m.map(function(e){return e.m;}));
+      info.textContent = m.length+' approach'+(m.length>1?'es':'')+' · closest '+closest.toFixed(3)+' km'; }
+    else { info.textContent = 'no conjunctions for “'+inp.value+'” this run'; }
+  }
+  if(inp){ inp.addEventListener('input', applyFocus); applyFocus(); }
   var fmt = function(n, dec){ return dec>0 ? n.toFixed(dec) : Math.round(n).toLocaleString('en-US'); };
 
   function countUp(el){
@@ -774,6 +827,16 @@ def build_dashboard(payload: dict, path: str) -> str:
         f"threshold={meta['threshold_km']}km  ·  screened from {meta['start_utc']} UTC"
     )
 
+    # Compact event set embedded for the client-side per-satellite focus filter.
+    compact = [
+        {"r": e["rank"], "a": e["object_a"], "na": e["norad_a"], "b": e["object_b"],
+         "nb": e["norad_b"], "t": e["tca_utc"], "m": round(e["miss_km"], 3),
+         "v": round(e["rel_speed_kms"], 2), "al": round(e["alt_km"], 0),
+         "rs": round(e["risk_score"], 1)}
+        for e in events
+    ]
+    events_json = json.dumps(compact, separators=(",", ":"))
+
     repl = {
         "__OVERVIEW__": _overview(summary, meta, events),
         "__REPORT_HEAD__": _sec_head("", "LIVE DATA", "Conjunction report"),
@@ -781,6 +844,7 @@ def build_dashboard(payload: dict, path: str) -> str:
         "__CARDS__": _stat_cards(summary, meta),
         "__FIGURE__": fig_html,
         "__TABLE__": _table(events),
+        "__EVENTS_JSON__": events_json,
         "__HOW__": _how_it_works(),
         "__ROADMAP__": _roadmap(),
         "__GENERATED__": str(meta.get("generated_utc", "")),

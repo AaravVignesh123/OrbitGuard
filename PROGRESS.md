@@ -26,7 +26,17 @@ a risk proxy, and writes a CSV + JSON + a self-contained interactive dashboard.
 - Phase 2.5 (S9–12): SOCRATES validation notebook (`notebooks/03`), packaged CLI (`src/screen.py`), risk sort (`orbitguard/risk.py`), demo dashboard (`orbitguard/dashboard.py`)
 - Tests: `tests/test_pipeline.py` (6/6 passing) — KD-tree vs brute force, event grouping, parabola fit, risk ordering, refinement-beats-coarse.
 
-**Next step:** Phase 3 — download the ESA Kelvins CDM dataset to `data/kelvins/`
-and implement `src/orbitguard/ml/dataset.py` (per-event feature aggregation),
-then train the baseline model in `ml/model.py`. Also: run `notebooks/03` against
-live SOCRATES to record a concrete validation comparison.
+**Added since v1:**
+- **Per-satellite / operator view** — `--focus <name|NORAD>` CLI + a live focus
+  filter in the dashboard's Live Report tab (`src/orbitguard/focus.py`).
+- **Continuous tracking** — `--watch <min>` re-pulls fresh TLEs and re-screens on
+  an interval; `--docs` refreshes the hosted page each cycle.
+- **ML data ready** — Kelvins access guide in `src/orbitguard/ml/README.md` +
+  a committed **bootstrap dataset** (`data/ml_bootstrap_dataset.csv`, 8,648 rows,
+  ~2.3% positive) generated from the screener via `ml/bootstrap_dataset.py`.
+- Tests now 8/8 (added focus coverage).
+
+**Next step:** Phase 3 — download the real Kelvins CSV to `data/kelvins/`, implement
+`ml/dataset.py` (per-event feature aggregation) + `ml/model.py` (GBDT + GroupKFold),
+and train against the bootstrap harness first. Also: run `notebooks/03` against live
+SOCRATES for a concrete validation comparison.
