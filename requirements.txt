@@ -7,3 +7,7 @@ scipy
 matplotlib
 plotly
 jupyter
+scikit-learn   # Phase 3 ML baseline (HistGradientBoosting)
+joblib         # model persistence
+# xgboost      # optional; on macOS needs `brew install libomp`
+# torch        # Phase 3 CNN (install when starting the CNN stage)

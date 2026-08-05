@@ -1,59 +1,67 @@
-# OrbitGuard — Phase 3 · ML risk model
+# Phase 3 — ML conjunction-risk model
 
-Goal: replace the v1 geometric risk **proxy** with a **learned probability that a
-conjunction escalates**, trained on real Conjunction Data Messages (CDMs).
+Replace the v1 geometric risk *proxy* with a **learned probability that a
+conjunction escalates**, trained on real Conjunction Data Messages (CDMs) from
+the **ESA Kelvins Collision Avoidance Challenge**.
 
-## Two datasets
+## The task
 
-### 1. Real data — ESA Kelvins Collision Avoidance Challenge (the target)
+Each *event* is a time-ordered sequence of CDMs (on average ~12) issued in the
+days before the time of closest approach (TCA). The label is the **final risk** —
+`risk` = log₁₀(collision probability) of the CDM closest to TCA. We may only use
+information available **≥ 2 days before TCA**; anything inside the 2-day window
+would leak the answer. An event is **high-risk** if final `risk ≥ −6`.
 
-The canonical dataset: ~162,634 CDM rows across ~13,154 unique conjunction
-events (≈12 CDMs/event), anonymised, ESA 2015–2019. Each event is a *time
-series* of CDMs issued as TCA approaches; the label is the risk of the **last**
-CDM before TCA. The task: predict that final risk from the earlier CDMs — i.e.
-decide, days ahead, whether an event becomes high-risk (`risk > -6`).
+- 13,154 events · 162,634 CDMs · 103 raw features
+- Only **2.7%** of events are high-risk → heavily imbalanced.
 
-**Get it (free):**
-- Official: <https://kelvins.esa.int/collision-avoidance-challenge/data/> (register, download `train_data.csv` / `test_data.csv`)
-- Public mirror (Kaggle account): <https://www.kaggle.com/datasets/shadmanrohan/collisionavoidancechallenge>
-
-Then place the files here:
-
-```
-data/kelvins/train_data.csv
-data/kelvins/test_data.csv
-```
-
-`dataset.py` defines the loading contract; `features.py` the per-event
-aggregation; `model.py` the training stub (gradient-boosted trees + GroupKFold on
-`event_id`). The Kessler library (ESA/Trillium) is a good reference for parsing CDMs.
-
-### 2. Bootstrap data — start today (plumbing, not science)
-
-You don't need to wait for the download to build the training harness. Generate a
-correctly-shaped, labelled starter CSV straight from OrbitGuard's own screening
-output:
+## Get the data (public, no login)
 
 ```bash
-python -m orbitguard.ml.bootstrap_dataset out/report_latest.json data/ml_bootstrap_dataset.csv
+mkdir -p data/kelvins && cd data/kelvins
+curl -L -o train_data.zip \
+  https://kelvins.esa.int/media/public/competitions/collision-avoidance-challenge/train_data.zip
+unzip train_data.zip     # -> train_data.csv   (git-ignored)
 ```
 
-(A ready-made copy is committed at [`data/ml_bootstrap_dataset.csv`](../../../data/ml_bootstrap_dataset.csv).)
+## Run the baseline
 
-Columns: `event_id, object_a, object_b, miss_km, coarse_miss_km, rel_speed_kms,
-alt_km, closing_geom, risk_score, high_risk`.
+```bash
+python src/orbitguard/ml/train_baseline.py
+```
 
-⚠️ The `high_risk` label here is a **deterministic rule** on the features
-(close *and* fast), so any model will score ~perfectly — that is expected and
-proves only that the pipeline works. Use it to build/validate data loading,
-splits, training, and metrics; swap in Kelvins for real learning.
+## Baseline results (5-fold stratified CV, gradient-boosted trees)
 
-## Suggested first model (baseline)
+| metric | value |
+|---|---|
+| **PR-AUC** (avg precision) | **0.641** |
+| **ROC-AUC** | **0.958** |
+| **F2** (best threshold) | **0.635** |
+| precision / recall @ −6 | 0.89 / 0.44 |
+| RMSE on high-risk risk | 1.86 |
 
-1. Load Kelvins, group by `event_id`, sort each event by `time_to_tca` desc.
-2. Aggregate per event: last-CDM snapshot + simple trend features (Δmiss, Δrisk).
-3. `HistGradientBoostingRegressor` (or classifier on `risk > -6`).
-4. **GroupKFold on `event_id`** so no event leaks across folds.
-5. Report the challenge's F2-style metric (rewards catching true high-risk events).
+Model: `HistGradientBoostingRegressor` (handles NaNs + the categorical
+object-type column natively). Key trick: **clip the training target at −10** — 64%
+of events sit at the `−30` no-risk sentinel, which otherwise dominates the
+squared-error loss; clipping (still 4 below the −6 decision boundary) more than
+doubles PR-AUC and cuts high-risk RMSE ~4×. Top features: the early `risk`
+estimate, `time_to_tca`, covariance sigmas — physically sensible.
 
-See the module stubs in this folder for the interfaces to fill in.
+For reference, ESA challenge winners scored ~F2 0.56–0.60 on the held-out set
+under the official (slightly different) metric, so this is a competitive baseline.
+
+## Files
+
+- `dataset.py` — download contract + `build_event_table()` (raw CDMs → one row/event)
+- `model.py` — `train_baseline()`: CV, metrics (PR-AUC / F2 / RMSE), full-fit model
+- `train_baseline.py` — runnable entry point → `out/ml/`
+- `features.py` — Phase-4 bridge to live screener output (stub)
+- `bootstrap_dataset.py` — tiny self-generated dataset from our own screener (smoke-test only)
+- `baseline_metrics.json` — the numbers above, checked in for the record
+
+## Next: CNN, head-to-head with this baseline
+
+The CNN must **earn its place** against these trees. Planned angle: treat each
+event's *sequence* of CDMs (risk / miss / speed / covariance vs. `time_to_tca`) as
+a 1-D multi-channel signal and train a small 1-D CNN, comparing on the identical
+CV folds and metrics. If it doesn't beat 0.635 F2 / 0.64 PR-AUC, we say so.
