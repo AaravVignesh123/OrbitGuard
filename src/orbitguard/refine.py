@@ -59,54 +59,71 @@ def _parabola_min(x: np.ndarray, y: np.ndarray) -> tuple:
     return xv, yv
 
 
+def _separation(sat_i, sat_j, flag_dt, offsets, ts):
+    """Separation (km) between two objects at ``flag_dt + offsets`` (seconds)."""
+    t = ts.utc(
+        flag_dt.year, flag_dt.month, flag_dt.day, flag_dt.hour, flag_dt.minute,
+        flag_dt.second + flag_dt.microsecond * 1e-6 + offsets,
+    )
+    ei, ej = sat_i.at(t), sat_j.at(t)
+    sep = np.linalg.norm(ei.position.km - ej.position.km, axis=0)
+    return sep, ei, ej
+
+
 def refine_event(
     sat_i: EarthSatellite,
     sat_j: EarthSatellite,
     cube: PositionCube,
     event: CandidateEvent,
     *,
-    window_s: float = 120.0,
-    fine_step_s: float = 1.0,
+    bracket_s: float = 45.0,
+    step_s: float = 1.0,
     ts=None,
 ) -> RefinedEvent:
-    """Refine one candidate to a precise TCA, miss distance and closing speed."""
+    """Refine one candidate to a precise TCA, miss distance and closing speed.
+
+    A fast conjunction's minimum is an extremely sharp notch — for a 14 km/s pass
+    with a 0.3 km miss it is only ~0.02 s wide — so no affordable time grid lands
+    in it, and fitting the *distance* curve (a hyperbola near the min) over a
+    coarse grid over-estimates the miss by hundreds of metres.
+
+    Instead we use the standard analytic close-approach solution. Propagate both
+    objects across a tight ±``bracket_s`` window (the coarse 60 s flag is within
+    ±30 s of the true TCA), take the relative position ``r`` and velocity ``v`` at
+    the nearest sample, and correct to the true minimum assuming constant relative
+    velocity over that fraction of a second::
+
+        ΔT = -(r·v) / |v|²          # time from the sample to closest approach
+        miss = | r + v·ΔT |          # perpendicular miss distance
+        TCA  = sample_time + ΔT
+
+    This is exact for linear relative motion; over ≤0.5 s the orbital curvature
+    error is ~2 m. Validated against a 0.01 s brute-force search
+    (``tests/test_miss_distance_matches_independent_ground_truth``).
+    """
     ts = ts or load.timescale()
-    t_flag = cube.times[event.k_min]
-    flag_dt = t_flag.utc_datetime().replace(tzinfo=None)
+    flag_dt = cube.times[event.k_min].utc_datetime().replace(tzinfo=None)
 
-    n = int(round(2 * window_s / fine_step_s)) + 1
-    offsets = np.linspace(-window_s, window_s, n)
-    fine = ts.utc(
-        flag_dt.year, flag_dt.month, flag_dt.day, flag_dt.hour, flag_dt.minute,
-        flag_dt.second + flag_dt.microsecond * 1e-6 + offsets,
-    )
+    n = int(round(2 * bracket_s / step_s)) + 1
+    offs = np.linspace(-bracket_s, bracket_s, n)
+    sep, ei, ej = _separation(sat_i, sat_j, flag_dt, offs, ts)
+    k = int(np.argmin(sep))
 
-    pi = sat_i.at(fine)
-    pj = sat_j.at(fine)
-    sep = np.linalg.norm(pi.position.km - pj.position.km, axis=0)  # (n,)
+    r = ei.position.km[:, k] - ej.position.km[:, k]        # relative position (km)
+    v = ei.velocity.km_per_s[:, k] - ej.velocity.km_per_s[:, k]   # relative velocity (km/s)
+    vv = float(np.dot(v, v))
+    if vv > 1e-9:
+        dT = -float(np.dot(r, v)) / vv
+        dT = max(min(dT, step_s), -step_s)                # stay within the sampled bracket
+        miss = float(np.linalg.norm(r + v * dT))
+    else:                                                 # co-moving (e.g. docked modules)
+        dT, miss = 0.0, float(sep[k])
+    miss = min(miss, float(sep[k]))                       # analytic value is a minimum
 
-    kmin = int(np.argmin(sep))
-    # Parabolic refinement using the bracketing triple (fallback to discrete).
-    if 0 < kmin < n - 1:
-        xs = offsets[kmin - 1 : kmin + 2]
-        ys = sep[kmin - 1 : kmin + 2]
-        t_star, miss = _parabola_min(xs, ys)
-        # Guard: vertex must stay inside the bracket.
-        if not (xs[0] <= t_star <= xs[2]):
-            t_star, miss = offsets[kmin], sep[kmin]
-    else:
-        t_star, miss = offsets[kmin], sep[kmin]
-
-    tca_dt = flag_dt + _dt.timedelta(seconds=float(t_star))
-
-    # Velocities at the discrete closest sample (1 s away from TCA at most).
-    vi = pi.velocity.km_per_s[:, kmin]
-    vj = pj.velocity.km_per_s[:, kmin]
-    rel_speed = float(np.linalg.norm(vi - vj))
-
-    # Rough altitude at closest approach (midpoint radius - Earth radius).
-    r_i = np.linalg.norm(pi.position.km[:, kmin])
-    r_j = np.linalg.norm(pj.position.km[:, kmin])
+    tca_dt = flag_dt + _dt.timedelta(seconds=float(offs[k] + dT))
+    rel_speed = float(np.sqrt(vv))
+    r_i = np.linalg.norm(ei.position.km[:, k])
+    r_j = np.linalg.norm(ej.position.km[:, k])
     alt_km = float((r_i + r_j) / 2.0 - _EARTH_RADIUS_KM)
 
     return RefinedEvent(

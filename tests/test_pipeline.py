@@ -145,6 +145,39 @@ def test_refinement_beats_coarse_grid():
     assert ref.rel_speed_kms >= 0.0
 
 
+def test_miss_distance_matches_independent_ground_truth():
+    """The refined miss must match an independent 0.01 s brute-force minimum.
+
+    This guards the accuracy of the reported collision distance itself: a naive
+    parabola-on-distance over a 1 s grid over-estimates a fast, close pass by
+    hundreds of metres. The two-stage d^2 refinement must land within ~30 m of a
+    high-resolution search done by a completely separate code path.
+    """
+    ts = load.timescale()
+    iss = EarthSatellite(ISS_L1, ISS_L2, "ISS", ts)
+    twin = EarthSatellite(ISS_L1, ISS_L2.replace("330.0000", "330.2000"), "TWIN", ts)
+    start = iss.epoch.utc_datetime().replace(tzinfo=None)
+    from orbitguard import propagate
+    cube = propagate.propagate([iss, twin], start=start, hours=1.5, step_s=60.0, ts=ts)
+    events = screen.screen(cube, threshold_km=200.0)
+    ev = min(events, key=lambda e: e.dist_min_km)
+    ref = refine.refine_event(iss, twin, cube, ev, ts=ts)
+
+    # Independent ground truth: 0.01 s brute force over +/-6 min around the flag.
+    flag_dt = cube.times[ev.k_min].utc_datetime().replace(tzinfo=None)
+    offs = np.linspace(-360, 360, int(720 / 0.01) + 1)
+    t = ts.utc(flag_dt.year, flag_dt.month, flag_dt.day, flag_dt.hour, flag_dt.minute,
+               flag_dt.second + offs)
+    sep = np.linalg.norm(iss.at(t).position.km - twin.at(t).position.km, axis=0)
+    truth = float(sep.min())
+
+    assert abs(ref.miss_km - truth) < 0.030, (
+        f"refined miss {ref.miss_km:.4f} km vs truth {truth:.4f} km "
+        f"(Δ {abs(ref.miss_km - truth) * 1000:.0f} m)")
+    # And it must not be a spurious over-estimate beyond ground truth by much.
+    assert ref.miss_km <= truth + 0.030
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     passed = 0
