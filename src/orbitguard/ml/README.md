@@ -59,9 +59,33 @@ under the official (slightly different) metric, so this is a competitive baselin
 - `bootstrap_dataset.py` — tiny self-generated dataset from our own screener (smoke-test only)
 - `baseline_metrics.json` — the numbers above, checked in for the record
 
-## Next: CNN, head-to-head with this baseline
+## CNN — head-to-head (done)
 
-The CNN must **earn its place** against these trees. Planned angle: treat each
-event's *sequence* of CDMs (risk / miss / speed / covariance vs. `time_to_tca`) as
-a 1-D multi-channel signal and train a small 1-D CNN, comparing on the identical
-CV folds and metrics. If it doesn't beat 0.635 F2 / 0.64 PR-AUC, we say so.
+A small **1-D CNN** reads each event's *sequence* of CDMs (19 per-CDM features ×
+20 timesteps → masked global avg/max pool → risk). Same events, folds, metrics.
+
+| model | PR-AUC | ROC-AUC | F2 | RMSE (high-risk) |
+|---|---|---|---|---|
+| gradient-boosted trees | **0.641** | 0.958 | 0.635 | 1.86 |
+| 1-D CNN | 0.565 | 0.963 | **0.653** | **1.32** |
+| rank-ensemble | **0.652** | **0.965** | 0.645 | — |
+
+**Honest verdict: no single model dominates.** The CNN wins the operational
+metrics (F2, and the risk-value RMSE — it gets the *number* right on high-risk
+events); the trees win ranking recall; the rank-ensemble gives the best overall
+ranking. That's the complementary-strengths result you'd expect, reported as-is.
+
+```bash
+python src/orbitguard/ml/train_cnn.py     # CNN vs baseline
+python src/orbitguard/ml/compare.py       # baseline vs CNN vs ensemble -> comparison.json
+python src/orbitguard/ml/predict_demo.py  # sanity: 14/15 top predictions are truly high-risk
+python src/orbitguard/ml/model_card.py    # regenerate docs/model.html
+```
+
+## Is it in the webpage?
+
+There's a **model card** at `docs/model.html` (live at
+`…github.io/OrbitGuard/model.html`) showing these results. The model does **not**
+yet score OrbitGuard's own live conjunctions — our v1 screener produces geometry,
+not the covariance/OD features this model needs. Bridging them is **Phase 4**
+(`features.bridge_from_screener`).

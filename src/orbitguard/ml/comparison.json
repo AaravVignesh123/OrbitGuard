@@ -1,0 +1,42 @@
+{
+  "baseline": {
+    "pr_auc": 0.6407055776372126,
+    "roc_auc": 0.9577869279447004,
+    "f2_at_-6": 0.4889807162534435,
+    "precision_at_-6": 0.8875,
+    "recall_at_-6": 0.43962848297213625,
+    "f2_best": 0.6353919239904988,
+    "f2_best_threshold": -6.612398908148733,
+    "rmse_high_risk": 1.8612556527269426,
+    "n_events": 11942,
+    "n_high_risk": 323,
+    "risk_floor": -10.0
+  },
+  "cnn": {
+    "pr_auc": 0.5645831798223643,
+    "roc_auc": 0.9633479059200833,
+    "f2_at_-6": 0.6102003642987249,
+    "precision_at_-6": 0.5661971830985916,
+    "recall_at_-6": 0.6222910216718266,
+    "f2_best": 0.6526674233825198,
+    "f2_best_threshold": -6.25723123550415,
+    "rmse_high_risk": 1.3244863365508965,
+    "n_events": 11942,
+    "n_high_risk": 323,
+    "risk_floor": -10.0,
+    "model": "cnn1d"
+  },
+  "ensemble": {
+    "pr_auc": 0.6516592117865276,
+    "roc_auc": 0.9654863644127252,
+    "f2_at_-6": 0.12203415445065739,
+    "precision_at_-6": 0.02704739574610618,
+    "recall_at_-6": 1.0,
+    "f2_best": 0.6447831184056273,
+    "f2_best_threshold": 0.9578797521353207,
+    "rmse_high_risk": null,
+    "n_events": 11942,
+    "n_high_risk": 323,
+    "note": "rank-averaged score (not on the risk scale); ranking metrics only"
+  }
+}

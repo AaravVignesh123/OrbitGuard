@@ -9,5 +9,5 @@ plotly
 jupyter
 scikit-learn   # Phase 3 ML baseline (HistGradientBoosting)
 joblib         # model persistence
+torch          # Phase 3 CNN (1-D conv over CDM sequences)
 # xgboost      # optional; on macOS needs `brew install libomp`
-# torch        # Phase 3 CNN (install when starting the CNN stage)
