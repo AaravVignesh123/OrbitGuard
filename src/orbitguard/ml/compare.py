@@ -31,8 +31,10 @@ def _rank(x):
 
 
 def _line(name, m):
+    rmse = m.get("rmse_high_risk")
+    rmse_s = f"{rmse:.3f}" if rmse is not None else "—"
     return (f"  {name:10} PR-AUC {m['pr_auc']:.3f} | ROC {m['roc_auc']:.3f} | "
-            f"F2 {m['f2_best']:.3f} | RMSE_HR {m['rmse_high_risk']:.3f}")
+            f"F2 {m['f2_best']:.3f} | RMSE_HR {rmse_s}")
 
 
 def main() -> int:

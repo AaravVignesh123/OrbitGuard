@@ -37,6 +37,6 @@
     "rmse_high_risk": null,
     "n_events": 11942,
     "n_high_risk": 323,
-    "note": "rank-averaged score (not on the risk scale); ranking metrics only"
+    "note": "rank-averaged score (not on the risk scale); use for ranking only"
   }
 }
