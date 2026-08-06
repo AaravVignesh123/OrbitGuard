@@ -100,6 +100,54 @@ def build_globe(cube, *, sample_n: int = 260, path_points: int = 48) -> dict:
     }
 
 
+_MU_EARTH = 398600.4418  # km^3 / s^2
+
+
+def _tle_altitude_band(l2: str) -> int:
+    """Rough altitude band from a TLE's mean motion (for globe colouring)."""
+    try:
+        n_rev_day = float(l2[52:63])
+        n = n_rev_day * 2.0 * np.pi / 86400.0          # rad/s
+        a = (_MU_EARTH / (n * n)) ** (1.0 / 3.0)        # km, semi-major axis
+        alt = a - 6371.0
+    except Exception:
+        return 0
+    return 0 if alt < 2000 else (1 if alt < 25000 else 2)
+
+
+def build_globe_tles(tle_path: str, *, sample_n: int = 700) -> dict:
+    """Sample TLE line-pairs from the raw snapshot for LIVE in-browser SGP4.
+
+    The web globe runs satellite.js on these to propagate every sampled object to
+    the *current* time, so positions are live and geo-accurate — not a frozen
+    snapshot. We only ship a sample to keep the payload light and the per-frame
+    propagation cheap.
+    """
+    with open(tle_path) as fh:
+        lines = [ln.rstrip("\n") for ln in fh]
+
+    recs = []
+    i, n = 0, len(lines)
+    while i < n:
+        name = lines[i].strip()
+        if name.startswith("1 ") or name.startswith("2 "):
+            l1, l2 = name, lines[i + 1] if i + 1 < n else ""
+            i += 2
+        else:
+            l1 = lines[i + 1] if i + 1 < n else ""
+            l2 = lines[i + 2] if i + 2 < n else ""
+            i += 3
+        if l1.startswith("1 ") and l2.startswith("2 "):
+            recs.append((l1, l2))
+
+    if len(recs) > sample_n:
+        idx = np.linspace(0, len(recs) - 1, sample_n).astype(int)
+        recs = [recs[k] for k in idx]
+
+    tles = [{"l1": l1, "l2": l2, "b": _tle_altitude_band(l2)} for l1, l2 in recs]
+    return {"earth_radius_km": 6371.0, "sample_n": len(tles), "tles": tles}
+
+
 def build_json(
     ranked: List[RankedEvent],
     *,
@@ -107,6 +155,7 @@ def build_json(
     sats_by_index: Optional[dict] = None,
     top_geometry: int = 5,
     cube=None,
+    tle_path: Optional[str] = None,
     ts=None,
 ) -> dict:
     """Build the dashboard payload. ``sats_by_index`` maps catalog index -> sat.
@@ -152,8 +201,10 @@ def build_json(
         "events": df.to_dict(orient="records"),
         "geometry": geometry,
     }
-    if cube is not None:
-        payload["globe"] = build_globe(cube)
+    if tle_path is not None:
+        payload["globe"] = build_globe_tles(tle_path)   # live SGP4 in the browser
+    elif cube is not None:
+        payload["globe"] = build_globe(cube)             # legacy precomputed paths
     return payload
 
 

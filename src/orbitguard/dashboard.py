@@ -154,17 +154,18 @@ def _globe_view(sample_n) -> str:
 <div class="globe-wrap">
   <div id="globe"></div>
   <div class="ghud ghud-tl">
-    <div class="ghud-title">ORBITAL SITUATION</div>
+    <div class="ghud-title"><span class="dot live"></span>LIVE · SGP4 to current time</div>
     <select id="conjsel" aria-label="highlighted conjunction"></select>
     <div id="conjinfo" class="conjinfo"></div>
   </div>
   <div class="ghud ghud-bl glegend">
-    <span><i class="sw" style="background:#5cc8ff"></i>catalogue objects · {sample_n} sampled</span>
+    <span><i class="sw" style="background:#5cc8ff"></i>live positions · {sample_n} objects sampled</span>
     <span><i class="sw" style="background:#5cc8ff"></i>conjunction · object A</span>
     <span><i class="sw" style="background:#ff4d8d"></i>conjunction · object B</span>
     <span><i class="sw" style="background:#f5a524"></i>miss distance</span>
+    <span class="gnote">positions propagated in-browser from CelesTrak TLEs to now; Earth oriented by sidereal time</span>
   </div>
-  <div id="globefallback" class="globefallback">Initializing 3D globe…</div>
+  <div id="globefallback" class="globefallback">Initializing live globe…</div>
 </div>
 """
 
@@ -464,6 +465,7 @@ code{font-family:var(--mono);background:#0a1020;border:1px solid var(--hair);bor
 .glegend{display:flex;flex-direction:column;gap:5px;background:rgba(9,13,24,.72);border:1px solid var(--hair);border-radius:10px;padding:10px 12px}
 .glegend span{font-size:10px;color:var(--dim);display:flex;align-items:center;gap:7px}
 .glegend .sw{width:9px;height:9px;border-radius:2px;display:inline-block}
+.glegend .gnote{color:var(--faint);font-size:9px;max-width:230px;line-height:1.4;margin-top:2px}
 .globefallback{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;color:var(--faint);font-family:var(--mono);font-size:12px;letter-spacing:.1em}
 
 /* ---- tables / focus ---- */
@@ -564,6 +566,7 @@ td.vok{color:var(--green)}
 
 <script>__THREE_JS__</script>
 <script>__ORBITCONTROLS_JS__</script>
+<script>__SATELLITE_JS__</script>
 <script>
 var OG_EVENTS=__EVENTS_JSON__;var OG_GLOBE=__GLOBE_JSON__;var OG_GEOM=__GEOM_JSON__;
 var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
@@ -632,17 +635,22 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
     scene.add(earth);
     scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.03,48,48),new THREE.MeshBasicMaterial({color:0x3aa0ff,transparent:true,opacity:.09,side:THREE.BackSide,depthWrite:false})));
     var S=1/OG_GLOBE.earth_radius_km,band=[0x5cc8ff,0xf5a524,0x8b7bff];
-    function toV(q){return [q[0]*S,q[2]*S,-q[1]*S]}
-    var segs={0:[],1:[],2:[]},paths=[],ppos=[],pcol=[];
-    OG_GLOBE.sats.forEach(function(sat){var pts=sat.p.map(toV);paths.push(pts);
-      for(var k=0;k<pts.length-1;k++){var a=pts[k],b=pts[k+1];segs[sat.b].push(a[0],a[1],a[2],b[0],b[1],b[2])}
-      var c=new THREE.Color(band[sat.b]);ppos.push(pts[0][0],pts[0][1],pts[0][2]);pcol.push(c.r,c.g,c.b)});
-    // faint orbit shells: depthWrite:false + slightly higher opacity => no z-fight flicker
+    function toV(q){return [q[0]*S,q[2]*S,-q[1]*S]}   // ECI(TEME) -> three (pole up); Earth is rotated by GMST so this is geo-accurate
+    // --- LIVE SGP4: propagate every sampled TLE to the current instant (satellite.js) ---
+    var recs=[];(OG_GLOBE.tles||[]).forEach(function(t){try{var sr=satellite.twoline2satrec(t.l1,t.l2);if(sr&&!sr.error)recs.push({sr:sr,b:(t.b|0)});}catch(e){}});
+    function eciKm(sr,date){var pv=satellite.propagate(sr,date);var p=pv&&pv.position;if(!p||isNaN(p.x))return null;return [p.x,p.y,p.z];}
+    var now0=new Date(),segs={0:[],1:[],2:[]},ppos=[],pcol=[],live=[];
+    recs.forEach(function(r){
+      var mm=r.sr.no||r.sr.no_kozai||0.0011, Tmin=(2*Math.PI)/mm, K=40, prev=null;   // one orbital period
+      for(var k=0;k<=K;k++){var e=eciKm(r.sr,new Date(now0.getTime()+(k/K)*Tmin*60000));if(!e){prev=null;continue;}var v=toV(e);if(prev)segs[r.b].push(prev[0],prev[1],prev[2],v[0],v[1],v[2]);prev=v;}
+      var e0=eciKm(r.sr,now0);if(e0){var v0=toV(e0),c=new THREE.Color(band[r.b]);ppos.push(v0[0],v0[1],v0[2]);pcol.push(c.r,c.g,c.b);live.push(r);}
+    });
     [0,1,2].forEach(function(b){if(!segs[b].length)return;var g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(segs[b],3));
-      scene.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:band[b],transparent:true,opacity:.2,depthWrite:false})))});
+      scene.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:band[b],transparent:true,opacity:.16,depthWrite:false})));});
     var pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.Float32BufferAttribute(ppos,3));pg.setAttribute('color',new THREE.Float32BufferAttribute(pcol,3));
-    var satPoints=new THREE.Points(pg,new THREE.PointsMaterial({size:.026,vertexColors:true,transparent:true,opacity:.95,depthWrite:false}));
+    var satPoints=new THREE.Points(pg,new THREE.PointsMaterial({size:.03,vertexColors:true,transparent:true,opacity:.98,depthWrite:false}));
     scene.add(satPoints);
+    function updateSats(now){var arr=satPoints.geometry.attributes.position.array;for(var i=0;i<live.length;i++){var e=eciKm(live[i].sr,now);if(!e)continue;var v=toV(e);arr[i*3]=v[0];arr[i*3+1]=v[1];arr[i*3+2]=v[2];}satPoints.geometry.attributes.position.needsUpdate=true;}
     var hi=new THREE.Group();scene.add(hi);
     function drawConj(g){while(hi.children.length)hi.remove(hi.children[0]);if(!g)return;
       function arc(a,color){var v=a.map(function(q){var t=toV(q);return new THREE.Vector3(t[0],t[1],t[2])});hi.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(v),new THREE.LineBasicMaterial({color:color,depthWrite:false})))}
@@ -657,13 +665,12 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
         '<div><span>RISK</span><b>'+Math.round(g.risk_score)+'</b></div><div><span>TCA</span><b style="font-size:11px">'+esc(g.tca_utc.slice(5,16))+'</b></div></div>'}
     if(sel&&OG_GEOM&&OG_GEOM.length){OG_GEOM.forEach(function(g,i){var o=document.createElement('option');o.value=i;o.textContent='#'+g.rank+'  '+g.object_a+' ↔ '+g.object_b+'  ('+g.miss_km.toFixed(2)+' km)';sel.appendChild(o)});
       sel.addEventListener('change',function(){var g=OG_GEOM[+sel.value];drawConj(g);updInfo(g)});drawConj(OG_GEOM[0]);updInfo(OG_GEOM[0])}else if(sel)sel.style.display='none';
-    var last=0,t=0;
-    function tick(ts){requestAnimationFrame(tick);var dt=Math.min((ts-last)/1000||0,.05);last=ts;controls.update();
-      if(!reduce){t+=dt*4;var arr=satPoints.geometry.attributes.position.array;
-        for(var i=0;i<paths.length;i++){var p=paths[i],L=p.length;if(L<2)continue;var f=(t+i*0.7)%(L-1),k=Math.floor(f),fr=f-k,a=p[k],b=p[k+1];
-          arr[i*3]=a[0]+(b[0]-a[0])*fr;arr[i*3+1]=a[1]+(b[1]-a[1])*fr;arr[i*3+2]=a[2]+(b[2]-a[2])*fr}
-        satPoints.geometry.attributes.position.needsUpdate=true;earth.rotation.y+=dt*0.015}
-      renderer.render(scene,camera)}
+    var lastUpd=0;
+    function tick(ts){requestAnimationFrame(tick);controls.update();
+      var now=new Date();
+      earth.rotation.y=satellite.gstime(now);          // align mesh Greenwich with TEME Greenwich -> true sub-points
+      if(!reduce && now.getTime()-lastUpd>400){lastUpd=now.getTime();updateSats(now);}   // live positions, throttled
+      renderer.render(scene,camera);}
     requestAnimationFrame(tick);
     globeApi.resize=function(){var w=host.clientWidth,h=host.clientHeight;if(!w||!h)return;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h)};
     window.addEventListener('resize',globeApi.resize);
@@ -720,6 +727,7 @@ def build_dashboard(payload: dict, path: str) -> str:
         "__GEOM_JSON__": json.dumps(payload.get("geometry", []), separators=(",", ":")),
         "__EARTH_TEX__": _vendor("earth_texture_b64.txt"),
         "__ORBITCONTROLS_JS__": _vendor("OrbitControls.js"),
+        "__SATELLITE_JS__": _vendor("satellite.min.js"),
         "__THREE_JS__": _vendor("three.min.js"),
     }
 
