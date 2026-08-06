@@ -1,0 +1,83 @@
+{
+  "generated_utc": "2026-08-05 18:50:42",
+  "snapshot_date": "20260805",
+  "kdtree": {
+    "n_points": 400,
+    "n_pairs": 136,
+    "identical": true,
+    "max_distance_diff_m": 1.7763568394002505e-12
+  },
+  "refinement": {
+    "n_checked": 10,
+    "max_error_m": 11.4,
+    "median_error_m": 1.4,
+    "events": [
+      {
+        "pair": "STARLINK-30876 \u2194 STARLINK-36246",
+        "reported_km": 0.219,
+        "truth_km": 0.23,
+        "error_m": 11.4
+      },
+      {
+        "pair": "STARLINK-2193 \u2194 RESURS-P 5",
+        "reported_km": 0.395,
+        "truth_km": 0.405,
+        "error_m": 10.2
+      },
+      {
+        "pair": "LIZZIESAT-1 (LS-1) \u2194 STARLINK-32494",
+        "reported_km": 0.698,
+        "truth_km": 0.698,
+        "error_m": 0.4
+      },
+      {
+        "pair": "STARLINK-30775 \u2194 VSP RF C1",
+        "reported_km": 0.273,
+        "truth_km": 0.274,
+        "error_m": 1.6
+      },
+      {
+        "pair": "STARLINK-5271 \u2194 STARLINK-5801",
+        "reported_km": 0.402,
+        "truth_km": 0.403,
+        "error_m": 1.2
+      },
+      {
+        "pair": "STARLINK-32951 \u2194 STARLINK-36450",
+        "reported_km": 0.15,
+        "truth_km": 0.15,
+        "error_m": 0.0
+      },
+      {
+        "pair": "STARLINK-5589 \u2194 STARLINK-36099",
+        "reported_km": 0.517,
+        "truth_km": 0.517,
+        "error_m": 0.0
+      },
+      {
+        "pair": "STARLINK-30835 \u2194 TIANMU-1 12",
+        "reported_km": 0.868,
+        "truth_km": 0.869,
+        "error_m": 0.9
+      },
+      {
+        "pair": "ICESAT-2 \u2194 STARLINK-35969",
+        "reported_km": 0.847,
+        "truth_km": 0.852,
+        "error_m": 5.8
+      },
+      {
+        "pair": "STARLINK-31818 \u2194 STARLINK-32420",
+        "reported_km": 0.4,
+        "truth_km": 0.404,
+        "error_m": 4.3
+      }
+    ]
+  },
+  "velocity": {
+    "max_error_kms": 0.00046
+  },
+  "socrates": {
+    "status": "manual \u2014 compare a few events at celestrak.org/SOCRATES"
+  }
+}

@@ -30,14 +30,21 @@ def _vendor(name: str) -> str:
         return fh.read()
 
 
-def _load_comparison():
-    p = os.path.join(_ML, "comparison.json")
-    if os.path.exists(p):
+def _load_json(path):
+    if os.path.exists(path):
         try:
-            return json.load(open(p))
+            return json.load(open(path))
         except Exception:
             return None
     return None
+
+
+def _load_comparison():
+    return _load_json(os.path.join(_ML, "comparison.json"))
+
+
+def _load_validation():
+    return _load_json(os.path.join(os.path.dirname(__file__), "validation.json"))
 
 
 # --------------------------------------------------------------------------- #
@@ -52,6 +59,8 @@ _NAV = [
      '<path d="M4 7h16M4 12h16M4 17h16"/><circle cx="7" cy="7" r="0" fill="currentColor"/>'),
     ("model", "Risk Model",
      '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>'),
+    ("methodology", "Methodology",
+     '<path d="M12 3l7 4v5c0 4-3 7-7 8-4-1-7-4-7-8V7z"/><path d="M9 12l2 2 4-4"/>'),
     ("about", "About",
      '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),
 ]
@@ -247,6 +256,62 @@ def _model_view(comp) -> str:
 """
 
 
+def _validation_view(val) -> str:
+    stages = [
+        ("01", "Propagate", "Every object on one shared inertial frame (SGP4). Same frame is the "
+         "invariant that makes pairwise distances meaningful.", "propagate.py"),
+        ("02", "Screen", "A KD-tree returns exactly the pairs a brute-force O(n²) scan would — verified, "
+         "then run at scale.", "screen.py"),
+        ("03", "Refine", "Analytic close-approach: from relative position/velocity, "
+         "ΔT = −(r·v)/|v|², miss = |r + v·ΔT|. Exact for linear relative motion.", "refine.py"),
+        ("04", "Rank", "Closing speed / (miss + ε), log-scaled — an explicit, inspectable proxy.", "risk.py"),
+    ]
+    steps = "".join(
+        f'<div class="vstep"><div class="vs-num">{n}</div><div><h4>{t}'
+        f'<span class="mod">{m}</span></h4><p>{b}</p></div></div>'
+        for n, t, b, m in stages)
+
+    if not val:
+        checks = ('<div class="panel muted">Run <code>python -m orbitguard.validate</code> '
+                  'to populate the validation numbers.</div>')
+    else:
+        kd = val["kdtree"]; rf = val["refinement"]; ve = val["velocity"]
+        rows = "".join(
+            f'<tr><td>{html.escape(e["pair"])}</td><td class="num">{e["reported_km"]:.3f}</td>'
+            f'<td class="num">{e["truth_km"]:.3f}</td><td class="num vok">{e["error_m"]:.1f}</td></tr>'
+            for e in rf["events"])
+        checks = f"""
+<div class="vgrid">
+  <div class="panel"><div class="p-head">✓ SCREENING</div>
+    <div class="vbig">identical</div>
+    <div class="note">KD-tree returns the <b>exact</b> brute-force pair set
+    ({kd['n_pairs']} pairs, max distance diff {kd['max_distance_diff_m']:.0e} m).</div></div>
+  <div class="panel"><div class="p-head">✓ MISS DISTANCE</div>
+    <div class="vbig">{rf['max_error_m']:.0f}<span>m max</span></div>
+    <div class="note">vs. an independent 0.01–0.02 s brute-force search ({rf['n_checked']} top events;
+    median {rf['median_error_m']:.1f} m). A naive parabola-on-distance was off by up to 380 m.</div></div>
+  <div class="panel"><div class="p-head">✓ RELATIVE VELOCITY</div>
+    <div class="vbig">{ve['max_error_kms']*1000:.1f}<span>m/s max</span></div>
+    <div class="note">Closing speed matches the independent computation to sub-metre/second.</div></div>
+</div>
+<div class="panel"><div class="p-head">REFINED MISS vs INDEPENDENT GROUND TRUTH</div>
+  <table class="mtable"><thead><tr><th>conjunction</th><th>reported (km)</th><th>truth (km)</th><th>Δ (m)</th></tr></thead>
+  <tbody>{rows}</tbody></table>
+  <div class="note">Both columns computed from the same TLEs by <b>separate code paths</b> — this checks the
+  refinement math, not the TLE physics. For physical validation, cross-check against CelesTrak SOCRATES.</div></div>
+"""
+
+    return f"""
+<div class="vpage">
+<div class="panel"><div class="p-head">PIPELINE</div><div class="vsteps">{steps}</div>
+  <div class="note">Reproduce every check: <code>python -m orbitguard.validate</code> ·
+  <code>python tests/test_pipeline.py</code> (9/9). Rigor and reproducibility are the point —
+  see the <a data-view="about">About</a> page for scope and honest limits.</div></div>
+{checks}
+</div>
+"""
+
+
 def _about_view(summary, meta) -> str:
     n_obj = f"{meta.get('n_objects', 0):,}"
     phases = [
@@ -266,16 +331,20 @@ def _about_view(summary, meta) -> str:
 <div class="about">
   <div class="panel">
     <div class="p-head">WHAT IT IS</div>
-    <p class="lead">OrbitGuard screens the low-Earth-orbit catalogue for close approaches: it pulls a live
-    CelesTrak snapshot ({n_obj} objects this run), propagates every object forward, finds the pairs headed
-    for a dangerously close pass, sharpens each to a precise time and miss distance, and ranks them by risk.</p>
+    <p class="lead">An <b>open, transparent, reproducible reference implementation</b> of an autonomous
+    conjunction-screening + ML-risk pipeline. It pulls a live CelesTrak snapshot ({n_obj} objects this run),
+    propagates every object on one inertial frame, screens the whole catalogue for close approaches, refines
+    each to a precise time and miss distance, and ranks by risk — every step validated and inspectable.</p>
     <div class="who">
-      <div><h5>Satellite operators</h5><p>First-pass screen of a fleet against the whole catalogue.</p></div>
-      <div><h5>Agencies (NASA / ESA)</h5><p>Mirrors the front of conjunction-assessment pipelines like SOCRATES / CARA.</p></div>
-      <div><h5>Analysts &amp; insurers</h5><p>Quantify on-orbit collision exposure.</p></div>
+      <div><h5>Technical reviewers</h5><p>An end-to-end system with real validation and an ML head — judged on method, not marketing.</p></div>
+      <div><h5>Researchers &amp; students</h5><p>A reproducible astrodynamics + ML baseline; the ESA Kelvins CDM work is built in.</p></div>
+      <div><h5>Agency research / education</h5><p>ESA ran the Kelvins challenge we train on; a legible open reference for R&amp;D and outreach.</p></div>
     </div>
-    <p class="disclaimer">A self-directed engineering project and screening tool — not an operational or
-    safety-certified system. Validate against CelesTrak SOCRATES before any operational use.</p>
+    <p class="disclaimer">Scope: a screening / analysis <b>demonstrator</b> on public TLEs — <b>not</b> an
+    operational or safety-certified system, and not a replacement for covariance-based services (CARA,
+    SOCRATES, commercial SSA). Public TLEs are ~km-accurate with no covariance, so the risk score is an
+    explicit proxy, not a formal probability of collision. Validate against CelesTrak SOCRATES before any
+    operational use.</p>
   </div>
   <div class="panel">
     <div class="p-head">ROADMAP</div>
@@ -420,6 +489,18 @@ tbody tr:hover td{background:rgba(92,200,255,.05)}
 .bignum{font-family:var(--mono);font-size:44px;font-weight:700;color:var(--green);line-height:1}
 .bignum span{font-size:18px;color:var(--dim);margin-left:6px}
 
+/* ---- methodology / validation ---- */
+.vpage{display:flex;flex-direction:column;gap:16px}
+.vsteps{display:grid;grid-template-columns:1fr 1fr;gap:14px 22px}
+.vstep{display:flex;gap:14px}
+.vs-num{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--accent);padding-top:1px}
+.vstep h4{margin:0 0 3px;font-size:14px}.vstep .mod{font-family:var(--mono);font-size:11px;color:var(--faint);font-weight:400;margin-left:8px}
+.vstep p{margin:0;color:var(--dim);font-size:12.5px}
+.vgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.vbig{font-family:var(--mono);font-size:32px;font-weight:700;color:var(--green);line-height:1;margin:2px 0 4px}
+.vbig span{font-size:14px;color:var(--dim);margin-left:6px;font-weight:400}
+td.vok{color:var(--green)}
+
 /* ---- about ---- */
 .about{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;align-items:start}
 .lead{color:#c4cee0;font-size:15px;line-height:1.6}
@@ -443,6 +524,7 @@ tbody tr:hover td{background:rgba(92,200,255,.05)}
   .nitem.active::before{display:none}.nitem span{display:none}.nitem{padding:9px}
   .main{height:calc(100vh - 56px)}
   .kpis{grid-template-columns:repeat(2,1fr)}.ov-grid,.mgrid,.about{grid-template-columns:1fr}
+  .vgrid{grid-template-columns:1fr}.vsteps{grid-template-columns:1fr}
   .tb-meta{display:none}
 }
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
@@ -474,6 +556,7 @@ tbody tr:hover td{background:rgba(92,200,255,.05)}
       <div class="view" id="view-globe">__GLOBE__</div>
       <div class="view" id="view-conjunctions">__CONJ__</div>
       <div class="view" id="view-model">__MODEL__</div>
+      <div class="view" id="view-methodology">__METHOD__</div>
       <div class="view" id="view-about">__ABOUT__</div>
     </div>
   </main>
@@ -490,7 +573,7 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
   var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var fmt=function(n,dec){return dec>0?n.toFixed(dec):Math.round(n).toLocaleString('en-US')};
   function esc(s){var d=document.createElement('div');d.textContent=String(s);return d.innerHTML}
-  var TITLES={overview:'Overview',globe:'Orbital Globe',conjunctions:'Conjunctions',model:'Risk Model',about:'About'};
+  var TITLES={overview:'Overview',globe:'Orbital Globe',conjunctions:'Conjunctions',model:'Risk Model',methodology:'Methodology & Validation',about:'About'};
 
   // count-ups
   document.querySelectorAll('.count').forEach(function(el){
@@ -620,6 +703,7 @@ def build_dashboard(payload: dict, path: str) -> str:
         "__GLOBE__": _globe_view(globe.get("sample_n", 0)),
         "__CONJ__": _conjunctions_view(events),
         "__MODEL__": _model_view(comp),
+        "__METHOD__": _validation_view(_load_validation()),
         "__ABOUT__": _about_view(summary, meta),
         "__NOBJ__": f"{meta.get('n_objects', 0):,}",
         "__NEVT__": f"{summary.get('n_events', 0):,}",
