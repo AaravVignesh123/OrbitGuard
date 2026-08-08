@@ -154,18 +154,19 @@ def _globe_view(sample_n) -> str:
 <div class="globe-wrap">
   <div id="globe"></div>
   <div class="ghud ghud-tl">
-    <div class="ghud-title"><span class="dot live"></span>LIVE · SGP4 to current time</div>
+    <div id="gsrc" class="gsrc"><span class="dot warn"></span>fetching live catalogue…</div>
     <select id="conjsel" aria-label="highlighted conjunction"></select>
     <div id="conjinfo" class="conjinfo"></div>
   </div>
   <div class="ghud ghud-bl glegend">
-    <span><i class="sw" style="background:#5cc8ff"></i>live positions · {sample_n} objects sampled</span>
+    <span><i class="sw" style="background:#5cc8ff"></i>live positions · fetched from CelesTrak now</span>
     <span><i class="sw" style="background:#5cc8ff"></i>conjunction · object A</span>
     <span><i class="sw" style="background:#ff4d8d"></i>conjunction · object B</span>
     <span><i class="sw" style="background:#f5a524"></i>miss distance</span>
-    <span class="gnote">positions propagated in-browser from CelesTrak TLEs to now; Earth oriented by sidereal time</span>
+    <span class="gnote">TLEs fetched live in-browser from CelesTrak, propagated by SGP4 to the current instant;
+    Earth oriented by sidereal time so each object sits over its true sub-point. Conjunction analysis is from the last screening run.</span>
   </div>
-  <div id="globefallback" class="globefallback">Initializing live globe…</div>
+  <div id="globefallback" class="globefallback">Fetching live catalogue from CelesTrak…</div>
 </div>
 """
 
@@ -454,6 +455,7 @@ code{font-family:var(--mono);background:#0a1020;border:1px solid var(--hair);bor
 .ghud{position:absolute;z-index:3;font-family:var(--mono);pointer-events:none}
 .ghud-tl{top:18px;left:18px;max-width:290px}.ghud-bl{bottom:18px;left:18px}
 .ghud-title{font-size:10px;letter-spacing:.16em;color:var(--faint);margin-bottom:9px}
+.gsrc{font-size:10.5px;letter-spacing:.06em;color:var(--green);margin-bottom:10px;background:rgba(9,13,24,.86);border:1px solid var(--hair2);border-radius:8px;padding:7px 10px;display:inline-block}
 #conjsel{pointer-events:auto;width:100%;background:rgba(9,13,24,.9);color:var(--ink);border:1px solid var(--hair2);border-radius:9px;padding:9px 10px;font-family:var(--mono);font-size:12px;outline:none}
 #conjsel:focus{border-color:var(--accent)}
 .conjinfo{margin-top:10px;background:rgba(9,13,24,.86);border:1px solid var(--hair2);border-radius:11px;padding:13px;backdrop-filter:blur(6px)}
@@ -550,8 +552,8 @@ td.vok{color:var(--green)}
   <main class="main">
     <div class="topbar">
       <div class="tb-title" id="tbtitle">Overview</div>
-      <div class="tb-meta"><span>catalogue <b>__GROUP__</b></span><span>window <b>__HOURS__h</b></span><span>threshold <b>__THRESH__km</b></span></div>
-      <div class="tb-live"><span class="dot live"></span>__GENERATED__ UTC</div>
+      <div class="tb-meta"><span>catalogue <b>__GROUP__</b></span><span>threshold <b>__THRESH__km</b></span><span>screened <b>__GENERATED__</b> UTC</span></div>
+      <div class="tb-live" title="current time — live clock"><span class="dot live"></span><span id="utcclock">--:--:-- UTC</span></div>
     </div>
     <div class="content" id="content">
       <div class="view active" id="view-overview">__OVERVIEW__</div>
@@ -568,7 +570,7 @@ td.vok{color:var(--green)}
 <script>__ORBITCONTROLS_JS__</script>
 <script>__SATELLITE_JS__</script>
 <script>
-var OG_EVENTS=__EVENTS_JSON__;var OG_GLOBE=__GLOBE_JSON__;var OG_GEOM=__GEOM_JSON__;
+var OG_EVENTS=__EVENTS_JSON__;var OG_GLOBE=__GLOBE_JSON__;var OG_GEOM=__GEOM_JSON__;var OG_SNAPSHOT="__SNAPSHOT__";
 var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
 </script>
 <script>
@@ -584,6 +586,10 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
     if(reduce){el.textContent=fmt(t,dec);return}
     var dur=900,s=null;function step(ts){if(!s)s=ts;var p=Math.min((ts-s)/dur,1),e=1-Math.pow(1-p,3);el.textContent=fmt(t*e,dec);if(p<1)requestAnimationFrame(step)}requestAnimationFrame(step);
   });
+
+  // live UTC clock (top-right) — proves the page runs on real current time
+  function tickClock(){var el=document.getElementById('utcclock');if(el){el.textContent=new Date().toISOString().slice(11,19)+' UTC';}}
+  tickClock();setInterval(tickClock,1000);
 
   // nav / view switching
   var items=document.querySelectorAll('.nitem'),views=document.querySelectorAll('.view'),content=document.getElementById('content');
@@ -636,21 +642,43 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
     scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.03,48,48),new THREE.MeshBasicMaterial({color:0x3aa0ff,transparent:true,opacity:.09,side:THREE.BackSide,depthWrite:false})));
     var S=1/OG_GLOBE.earth_radius_km,band=[0x5cc8ff,0xf5a524,0x8b7bff];
     function toV(q){return [q[0]*S,q[2]*S,-q[1]*S]}   // ECI(TEME) -> three (pole up); Earth is rotated by GMST so this is geo-accurate
-    // --- LIVE SGP4: propagate every sampled TLE to the current instant (satellite.js) ---
-    var recs=[];(OG_GLOBE.tles||[]).forEach(function(t){try{var sr=satellite.twoline2satrec(t.l1,t.l2);if(sr&&!sr.error)recs.push({sr:sr,b:(t.b|0)});}catch(e){}});
     function eciKm(sr,date){var pv=satellite.propagate(sr,date);var p=pv&&pv.position;if(!p||isNaN(p.x))return null;return [p.x,p.y,p.z];}
-    var now0=new Date(),segs={0:[],1:[],2:[]},ppos=[],pcol=[],live=[];
-    recs.forEach(function(r){
-      var mm=r.sr.no||r.sr.no_kozai||0.0011, Tmin=(2*Math.PI)/mm, K=40, prev=null;   // one orbital period
-      for(var k=0;k<=K;k++){var e=eciKm(r.sr,new Date(now0.getTime()+(k/K)*Tmin*60000));if(!e){prev=null;continue;}var v=toV(e);if(prev)segs[r.b].push(prev[0],prev[1],prev[2],v[0],v[1],v[2]);prev=v;}
-      var e0=eciKm(r.sr,now0);if(e0){var v0=toV(e0),c=new THREE.Color(band[r.b]);ppos.push(v0[0],v0[1],v0[2]);pcol.push(c.r,c.g,c.b);live.push(r);}
-    });
-    [0,1,2].forEach(function(b){if(!segs[b].length)return;var g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(segs[b],3));
-      scene.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:band[b],transparent:true,opacity:.16,depthWrite:false})));});
-    var pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.Float32BufferAttribute(ppos,3));pg.setAttribute('color',new THREE.Float32BufferAttribute(pcol,3));
-    var satPoints=new THREE.Points(pg,new THREE.PointsMaterial({size:.03,vertexColors:true,transparent:true,opacity:.98,depthWrite:false}));
-    scene.add(satPoints);
-    function updateSats(now){var arr=satPoints.geometry.attributes.position.array;for(var i=0;i<live.length;i++){var e=eciKm(live[i].sr,now);if(!e)continue;var v=toV(e);arr[i*3]=v[0];arr[i*3+1]=v[1];arr[i*3+2]=v[2];}satPoints.geometry.attributes.position.needsUpdate=true;}
+    function bandOf(sr){var rpd=(sr.no||sr.no_kozai||0.06)*1440/(2*Math.PI);return rpd>11.25?0:(rpd>2?1:2);}  // LEO / MEO / high by revs-per-day
+    var satGroup=new THREE.Group();scene.add(satGroup);
+    var live=[],satPoints=null;
+    function clearSats(){while(satGroup.children.length){var c=satGroup.children[0];satGroup.remove(c);if(c.geometry&&c.geometry.dispose)c.geometry.dispose();}live=[];satPoints=null;}
+    // --- LIVE SGP4: build orbit shells + current positions from a TLE set (satellite.js) ---
+    function buildSats(tles){
+      clearSats();
+      var recs=[];tles.forEach(function(t){try{var sr=satellite.twoline2satrec(t.l1,t.l2);if(sr&&!sr.error)recs.push({sr:sr,b:bandOf(sr)});}catch(e){}});
+      var now0=new Date(),segs={0:[],1:[],2:[]},ppos=[],pcol=[];
+      recs.forEach(function(r){
+        var mm=r.sr.no||r.sr.no_kozai||0.0011,Tmin=(2*Math.PI)/mm,K=40,prev=null;   // one orbital period
+        for(var k=0;k<=K;k++){var e=eciKm(r.sr,new Date(now0.getTime()+(k/K)*Tmin*60000));if(!e){prev=null;continue;}var v=toV(e);if(prev)segs[r.b].push(prev[0],prev[1],prev[2],v[0],v[1],v[2]);prev=v;}
+        var e0=eciKm(r.sr,now0);if(e0){var v0=toV(e0),c=new THREE.Color(band[r.b]);ppos.push(v0[0],v0[1],v0[2]);pcol.push(c.r,c.g,c.b);live.push(r);}
+      });
+      [0,1,2].forEach(function(b){if(!segs[b].length)return;var g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(segs[b],3));
+        satGroup.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:band[b],transparent:true,opacity:.16,depthWrite:false})));});
+      var pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.Float32BufferAttribute(ppos,3));pg.setAttribute('color',new THREE.Float32BufferAttribute(pcol,3));
+      satPoints=new THREE.Points(pg,new THREE.PointsMaterial({size:.03,vertexColors:true,transparent:true,opacity:.98,depthWrite:false}));satGroup.add(satPoints);
+    }
+    function updateSats(now){if(!satPoints)return;var arr=satPoints.geometry.attributes.position.array;for(var i=0;i<live.length;i++){var e=eciKm(live[i].sr,now);if(!e)continue;var v=toV(e);arr[i*3]=v[0];arr[i*3+1]=v[1];arr[i*3+2]=v[2];}satPoints.geometry.attributes.position.needsUpdate=true;}
+    function setSrc(isLive,n,total,ep){var el=document.getElementById('gsrc');if(!el)return;
+      if(isLive){el.innerHTML='<span class="dot live"></span>LIVE · CelesTrak · '+n+' of '+Number(total).toLocaleString('en-US')+' active · elements '+ep;}
+      else{el.innerHTML='<span class="dot warn"></span>snapshot '+(OG_SNAPSHOT||'')+' · live fetch unavailable';}}
+    function parseTLE(txt){var L=txt.split(/\r?\n/),o=[];for(var i=0;i+2<L.length;i+=3){var l1=L[i+1],l2=L[i+2];if(l1&&l1.charAt(0)==='1'&&l2&&l2.charAt(0)==='2')o.push({l1:l1,l2:l2});}return o;}
+    function sampleArr(a,n){if(a.length<=n)return a;var o=[],st=a.length/n;for(var i=0;i<n;i++)o.push(a[Math.floor(i*st)]);return o;}
+    // instant render from the baked snapshot, then swap to a LIVE CelesTrak fetch
+    buildSats(OG_GLOBE.tles||[]);setSrc(false);
+    (function(){var fb=document.getElementById('globefallback');
+      fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle',{cache:'no-store'})
+        .then(function(r){if(!r.ok)throw 0;return r.text();})
+        .then(function(txt){var all=parseTLE(txt);if(all.length<50)throw 0;
+          buildSats(sampleArr(all,500));
+          var mx=0;live.forEach(function(r){if(r.sr.jdsatepoch>mx)mx=r.sr.jdsatepoch;});
+          var ep=new Date((mx-2440587.5)*86400000).toISOString().slice(0,10);
+          setSrc(true,live.length,all.length,ep);if(fb)fb.style.display='none';})
+        .catch(function(){setSrc(false);if(fb)fb.style.display='none';});})();
     var hi=new THREE.Group();scene.add(hi);
     function drawConj(g){while(hi.children.length)hi.remove(hi.children[0]);if(!g)return;
       function arc(a,color){var v=a.map(function(q){var t=toV(q);return new THREE.Vector3(t[0],t[1],t[2])});hi.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(v),new THREE.LineBasicMaterial({color:color,depthWrite:false})))}
