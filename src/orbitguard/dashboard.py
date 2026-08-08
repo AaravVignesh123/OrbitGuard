@@ -663,22 +663,30 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
       satPoints=new THREE.Points(pg,new THREE.PointsMaterial({size:.03,vertexColors:true,transparent:true,opacity:.98,depthWrite:false}));satGroup.add(satPoints);
     }
     function updateSats(now){if(!satPoints)return;var arr=satPoints.geometry.attributes.position.array;for(var i=0;i<live.length;i++){var e=eciKm(live[i].sr,now);if(!e)continue;var v=toV(e);arr[i*3]=v[0];arr[i*3+1]=v[1];arr[i*3+2]=v[2];}satPoints.geometry.attributes.position.needsUpdate=true;}
-    function setSrc(isLive,n,total,ep){var el=document.getElementById('gsrc');if(!el)return;
-      if(isLive){el.innerHTML='<span class="dot live"></span>LIVE · CelesTrak · '+n+' of '+Number(total).toLocaleString('en-US')+' active · elements '+ep;}
-      else{el.innerHTML='<span class="dot warn"></span>snapshot '+(OG_SNAPSHOT||'')+' · live fetch unavailable';}}
+    function freshEpoch(){var mx=0;live.forEach(function(r){if(r.sr.jdsatepoch>mx)mx=r.sr.jdsatepoch;});return mx?new Date((mx-2440587.5)*86400000).toISOString().slice(0,10):'—';}
+    function setSrc(state,info){var el=document.getElementById('gsrc');if(!el)return;
+      if(state==='live'){el.innerHTML='<span class="dot live"></span>LIVE · CelesTrak · '+info;}
+      else if(state==='cache'){el.innerHTML='<span class="dot live"></span>LIVE · CelesTrak (cached) · '+info;}
+      else{el.innerHTML='<span class="dot warn"></span>snapshot '+(OG_SNAPSHOT||'')+' · using baked elements';}}
     function parseTLE(txt){var L=txt.split(/\r?\n/),o=[];for(var i=0;i+2<L.length;i+=3){var l1=L[i+1],l2=L[i+2];if(l1&&l1.charAt(0)==='1'&&l2&&l2.charAt(0)==='2')o.push({l1:l1,l2:l2});}return o;}
     function sampleArr(a,n){if(a.length<=n)return a;var o=[],st=a.length/n;for(var i=0;i<n;i++)o.push(a[Math.floor(i*st)]);return o;}
-    // instant render from the baked snapshot, then swap to a LIVE CelesTrak fetch
-    buildSats(OG_GLOBE.tles||[]);setSrc(false);
-    (function(){var fb=document.getElementById('globefallback');
-      fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle',{cache:'no-store'})
-        .then(function(r){if(!r.ok)throw 0;return r.text();})
-        .then(function(txt){var all=parseTLE(txt);if(all.length<50)throw 0;
-          buildSats(sampleArr(all,500));
-          var mx=0;live.forEach(function(r){if(r.sr.jdsatepoch>mx)mx=r.sr.jdsatepoch;});
-          var ep=new Date((mx-2440587.5)*86400000).toISOString().slice(0,10);
-          setSrc(true,live.length,all.length,ep);if(fb)fb.style.display='none';})
-        .catch(function(){setSrc(false);if(fb)fb.style.display='none';});})();
+    // instant render from the baked snapshot; HUD stays "fetching…" until the live fetch settles
+    buildSats(OG_GLOBE.tles||[]);
+    (function(){
+      var CK='og_live_tles_v1',TTL=3*3600*1000,fb=document.getElementById('globefallback');   // cache 3h: respect CelesTrak's rate limit, avoid re-pull 403s
+      function done(){if(fb)fb.style.display='none';}
+      try{var c=JSON.parse(localStorage.getItem(CK)||'null');
+        if(c&&c.tles&&c.tles.length&&(Date.now()-c.t)<TTL){buildSats(c.tles);setSrc('cache',live.length+' objects · elements '+freshEpoch());done();return;}}catch(e){}
+      var groups=['active','starlink'],gi=0;   // CelesTrak 403s repeat pulls of the same group; try another
+      (function tryG(){if(gi>=groups.length){setSrc('snapshot');done();return;}
+        fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP='+groups[gi]+'&FORMAT=tle',{cache:'no-store'})
+          .then(function(r){if(!r.ok)throw 0;return r.text();})
+          .then(function(txt){var all=parseTLE(txt);if(all.length<50)throw 0;
+            var samp=sampleArr(all,500);buildSats(samp);
+            try{localStorage.setItem(CK,JSON.stringify({t:Date.now(),tles:samp}));}catch(e){}
+            setSrc('live',live.length+' of '+Number(all.length).toLocaleString('en-US')+' '+groups[gi]+' · elements '+freshEpoch());done();})
+          .catch(function(){gi++;tryG();});})();
+    })();
     var hi=new THREE.Group();scene.add(hi);
     function drawConj(g){while(hi.children.length)hi.remove(hi.children[0]);if(!g)return;
       function arc(a,color){var v=a.map(function(q){var t=toV(q);return new THREE.Vector3(t[0],t[1],t[2])});hi.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(v),new THREE.LineBasicMaterial({color:color,depthWrite:false})))}
