@@ -87,53 +87,124 @@ def _hue(score):
 # --------------------------------------------------------------------------- #
 # view fragments
 # --------------------------------------------------------------------------- #
-def _kpi(label, value, dec=0, unit="", accent=""):
-    return (f'<div class="kpi {accent}"><div class="kpi-lab">{label}</div>'
+def _kpi(label, value, dec=0, unit="", accent="", d=0):
+    return (f'<div class="kpi {accent}" data-reveal style="--d:{d}ms">'
+            f'<div class="kpi-lab">{label}</div>'
             f'<div class="kpi-val">{_count(value, dec)}<i>{unit}</i></div></div>')
 
 
-def _overview(summary, meta, events) -> str:
+def _ov_hero(summary, meta) -> str:
+    n_obj = meta.get("n_objects", 0) or 0
+    n_evt = summary.get("n_events", 0) or 0
+    group = html.escape(str(meta.get("group", "—")))
+    snap = html.escape(str(meta.get("snapshot_date", "—")))
+    hours = html.escape(str(meta.get("hours", "—")))
+    return (
+        '<div class="ov-hero panel" data-reveal>'
+        '<div class="hero-bg" aria-hidden="true"><div class="stars"></div><div class="stars s2"></div>'
+        '<svg class="orb" viewBox="0 0 640 360">'
+        '<ellipse class="orb-ring" cx="320" cy="180" rx="290" ry="104"/>'
+        '<ellipse class="orb-ring r2" cx="320" cy="180" rx="210" ry="164"/></svg></div>'
+        '<div class="hero-body">'
+        '<div class="eyebrow">{ orbital conjunction screening }</div>'
+        f'<h1 class="hero-h">{n_obj:,} objects screened<i>·</i>{n_evt:,} conjunctions flagged</h1>'
+        f'<div class="hero-sub mono">catalogue <b>{group}</b> · snapshot <b>{snap}</b> · window <b>{hours} h</b>'
+        '<span class="hero-live"><span class="dot live"></span>LIVE <span id="heroclock">--:--:--</span> UTC</span></div>'
+        '<div class="hero-cta"><a class="pill" data-view="globe">Open globe →</a>'
+        '<a class="pill" data-view="conjunctions">All conjunctions →</a></div>'
+        '</div></div>'
+    )
+
+
+def _encounter_svg(top) -> str:
+    miss = top.get("miss_km", 0.0) or 0.0
+    return (
+        '<svg class="enc" viewBox="0 0 220 120" aria-hidden="true">'
+        '<path class="enc-a" d="M8,104 Q112,-6 212,72"/>'
+        '<path class="enc-b" d="M8,56 Q112,150 212,18"/>'
+        '<line class="enc-miss" x1="110" y1="48" x2="130" y2="62"/>'
+        '<circle class="enc-pt a" cx="110" cy="48" r="3.6"/>'
+        '<circle class="enc-pt b" cx="130" cy="62" r="3.6"/>'
+        f'<text class="enc-t" x="120" y="44">{miss:.3f} km</text></svg>'
+    )
+
+
+def _trust_strip(validation) -> str:
+    if not validation:
+        return ""
+    chips = []
+    kd = validation.get("kdtree") or {}
+    if kd.get("identical"):
+        chips.append('<span class="chip"><b>✓</b> KD-tree = brute force</span>')
+    ref = validation.get("refinement") or {}
+    if ref.get("max_error_m") is not None:
+        chips.append(f'<span class="chip">refined miss &lt; {ref["max_error_m"]:.0f} m</span>')
+    soc = validation.get("socrates") or {}
+    if soc.get("status") == "ok" and soc.get("median_miss_diff_m") is not None:
+        chips.append(
+            f'<span class="chip">SOCRATES ~{soc["median_miss_diff_m"]:.0f} m '
+            f'(n={soc.get("n_checked", "?")})</span>'
+        )
+    chips.append('<span class="chip">Pc · Foster 2-D</span>')
+    return ('<div class="trust" data-reveal><span class="trust-lab">VALIDATED</span>'
+            + "".join(chips) + '</div>')
+
+
+def _pipeline_ribbon() -> str:
+    steps = ["catalogue", "propagate", "screen", "refine", "Pc", "rank"]
+    nodes = '<i class="rb-sep">→</i>'.join(f'<span class="rb-step">{s}</span>' for s in steps)
+    return ('<div class="ribbon"><span class="rb-lab">PIPELINE</span>'
+            f'<div class="rb-track"><span class="rb-dot"></span>{nodes}</div></div>')
+
+
+def _overview(summary, meta, events, validation=None) -> str:
+    hero = _ov_hero(summary, meta)
+
     kpis = (
         '<div class="kpis">'
-        + _kpi("OBJECTS SCREENED", meta.get("n_objects", 0))
-        + _kpi("CONJUNCTIONS", summary.get("n_events", 0))
-        + _kpi("CLOSEST APPROACH", summary.get("closest_km"), 2, " km", "warn")
-        + _kpi("FASTEST CLOSING", summary.get("fastest_kms"), 1, " km/s")
-        + _kpi("MEDIAN MISS", summary.get("median_miss_km"), 1, " km")
+        + _kpi("OBJECTS SCREENED", meta.get("n_objects", 0), d=0)
+        + _kpi("CONJUNCTIONS", summary.get("n_events", 0), d=60)
+        + _kpi("CLOSEST APPROACH", summary.get("closest_km"), 2, " km", "warn", d=120)
+        + _kpi("FASTEST CLOSING", summary.get("fastest_kms"), 1, " km/s", d=180)
+        + _kpi("MEDIAN MISS", summary.get("median_miss_km"), 1, " km", d=240)
         + "</div>"
     )
 
     top = events[0] if events else None
-    alert = '<div class="panel muted">No conjunctions flagged.</div>'
+    alert = '<div class="panel muted" data-reveal>No conjunctions flagged.</div>'
     if top:
         alert = (
-            f'<div class="panel alert"><div class="p-head"><span class="dot warn"></span>'
-            f'HIGHEST-RISK PASS</div>'
+            f'<div class="panel alert" data-reveal><div class="p-head"><span class="dot warn"></span>'
+            f'HIGHEST-RISK PASS</div><div class="al-top"><div class="al-main">'
             f'<div class="al-pair">{html.escape(str(top["object_a"]))}'
             f'<i>↔</i>{html.escape(str(top["object_b"]))}</div>'
             f'<div class="al-grid">'
             f'<div><span>MISS</span><b>{top["miss_km"]:.3f} km</b></div>'
             f'<div><span>CLOSING</span><b>{top["rel_speed_kms"]:.2f} km/s</b></div>'
+            f'<div><span>Pc</span><b>{_pc_str(top.get("pc"))}</b></div>'
             f'<div><span>TCA · UTC</span><b>{top["tca_utc"][5:16]}</b></div>'
             f'<div><span>RISK</span><b class="risk" style="--rh:{_hue(top["risk_score"])}">'
-            f'{top["risk_score"]:.0f}</b></div></div>'
-            f'<a class="mini-btn" data-view="globe">View in globe →</a></div>'
+            f'{top["risk_score"]:.0f}</b></div></div></div>'
+            f'{_encounter_svg(top)}</div>'
+            f'<a class="pill" data-view="globe">View in globe →</a></div>'
         )
 
     rows = "".join(
-        f'<div class="lrow"><span class="lr-rank">{e["rank"]:02d}</span>'
+        f'<div class="lrow" data-reveal style="--d:{i*45}ms"><span class="lr-rank">{e["rank"]:02d}</span>'
         f'<span class="lr-pair">{html.escape(str(e["object_a"]))} <i>↔</i> '
         f'{html.escape(str(e["object_b"]))}</span>'
         f'<span class="lr-miss">{e["miss_km"]:.3f}<i>km</i></span>'
         f'<span class="risk" style="--rh:{_hue(e["risk_score"])}">{e["risk_score"]:.0f}</span></div>'
-        for e in events[:8]
+        for i, e in enumerate(events[:8])
     )
-    toplist = (f'<div class="panel"><div class="p-head">TOP CONJUNCTIONS'
+    toplist = (f'<div class="panel" data-reveal><div class="p-head">TOP CONJUNCTIONS'
                f'<a class="p-more" data-view="conjunctions">all {summary.get("n_events",0):,} →</a>'
                f'</div><div class="list">{rows}</div></div>')
 
+    trust = _trust_strip(validation)
+
     status = (
-        '<div class="panel"><div class="p-head">RUN STATUS</div><div class="status">'
+        '<div class="panel" data-reveal><div class="p-head">RUN STATUS</div><div class="status">'
         + f'<div><span>CATALOGUE</span><b>{meta.get("group")}</b></div>'
         + f'<div><span>SNAPSHOT</span><b>{meta.get("snapshot_date")}</b></div>'
         + f'<div><span>WINDOW</span><b>{meta.get("hours")} h</b></div>'
@@ -141,12 +212,13 @@ def _overview(summary, meta, events) -> str:
         + f'<div><span>THRESHOLD</span><b>{meta.get("threshold_km")} km</b></div>'
         + f'<div><span>VALID / SCREENED</span><b>{meta.get("n_valid","—")} / {meta.get("n_objects",0):,}</b></div>'
         + f'<div><span>RUNTIME</span><b>{meta.get("runtime_s","—")} s</b></div>'
-        + '<div style="grid-column:1/-1"><span>PIPELINE</span><b class="ok">screen → refine → Pc → rank ✓</b></div>'
-        + '</div></div>'
+        + '</div>'
+        + _pipeline_ribbon()
+        + '</div>'
     )
 
-    return (f'{kpis}<div class="ov-grid"><div class="ov-left">{alert}{status}</div>'
-            f'<div class="ov-right">{toplist}</div></div>')
+    return (f'{hero}{kpis}<div class="ov-grid"><div class="ov-left">{alert}</div>'
+            f'<div class="ov-right">{toplist}</div></div>{trust}{status}')
 
 
 def _globe_view(sample_n) -> str:
@@ -496,7 +568,7 @@ code{font-family:var(--mono);background:#0a1020;border:1px solid var(--hair);bor
 .ov-left{display:flex;flex-direction:column;gap:16px}
 .panel.alert{border-color:rgba(245,165,36,.28)}
 .al-pair{font-size:17px;font-weight:650;margin:4px 0 14px;line-height:1.3}.al-pair i{color:var(--faint);margin:0 6px}
-.al-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+.al-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));gap:14px 16px}
 .al-grid span{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--faint)}
 .al-grid b{font-family:var(--mono);font-size:16px}
 .mini-btn{display:inline-block;margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--accent);border:1px solid rgba(92,200,255,.3);border-radius:8px;padding:6px 11px}
@@ -510,6 +582,66 @@ code{font-family:var(--mono);background:#0a1020;border:1px solid var(--hair);bor
 .lr-rank{font-family:var(--mono);color:var(--accent);font-size:12px}
 .lr-pair{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lr-pair i{color:var(--faint)}
 .lr-miss{font-family:var(--mono);font-size:13px}.lr-miss i{color:var(--faint);font-size:10px;margin-left:3px}
+.lrow .lr-pair i{color:var(--faint)}
+
+/* ---- overview: hero + bento + motion ---- */
+[data-reveal]{opacity:0;transform:translateY(14px);transition:opacity .6s cubic-bezier(.22,1,.36,1),transform .6s cubic-bezier(.22,1,.36,1);transition-delay:var(--d,0ms)}
+[data-reveal].in{opacity:1;transform:none}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--dim);margin-bottom:14px}
+.pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:12px;color:var(--ink);cursor:pointer;
+  border:1px solid var(--hair2);border-radius:999px;padding:8px 16px;transition:border-color .2s,background .2s,transform .2s}
+.pill:hover{border-color:var(--accent);background:rgba(92,200,255,.08);transform:translateY(-1px)}
+/* cursor sheen on cards (gentle ripple, all views) */
+.kpi,.panel{position:relative}
+.kpi::before,.panel::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .3s;
+  background:radial-gradient(240px circle at var(--mx,50%) var(--my,50%),rgba(120,180,255,.10),transparent 60%)}
+.kpi:hover::before,.panel:hover::before{opacity:1}
+.kpi{transition:transform .2s,border-color .2s}.kpi:hover{transform:translateY(-2px);border-color:var(--hair2)}
+/* hero */
+.ov-hero{position:relative;overflow:hidden;padding:34px 30px;margin-bottom:16px;min-height:186px;display:flex;align-items:center;
+  background:radial-gradient(120% 150% at 82% -20%,rgba(46,74,140,.30),var(--panel) 62%)}
+.hero-bg{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.hero-body{position:relative;z-index:1;max-width:760px}
+.hero-h{font-size:clamp(28px,4.4vw,52px);line-height:1.03;letter-spacing:-.02em;font-weight:760;margin:0 0 12px}
+.hero-h i{font-style:normal;color:var(--faint);margin:0 12px;font-weight:400}
+.hero-sub{font-size:12px;color:var(--dim);display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.hero-sub b{color:var(--ink);font-weight:500}
+.hero-live{color:var(--green);display:inline-flex;align-items:center;gap:6px}
+.hero-cta{display:flex;gap:12px;margin-top:20px}
+.stars{position:absolute;inset:-20% -20%;background-repeat:no-repeat;opacity:.5;animation:starDrift 60s linear infinite;
+  background-image:radial-gradient(1.4px 1.4px at 20% 30%,rgba(200,220,255,.9),transparent),
+    radial-gradient(1.4px 1.4px at 70% 60%,rgba(200,220,255,.7),transparent),
+    radial-gradient(1px 1px at 40% 80%,rgba(200,220,255,.8),transparent),
+    radial-gradient(1.6px 1.6px at 85% 25%,rgba(200,220,255,.75),transparent),
+    radial-gradient(1px 1px at 55% 15%,rgba(200,220,255,.7),transparent),
+    radial-gradient(1.2px 1.2px at 12% 68%,rgba(200,220,255,.7),transparent)}
+.stars.s2{animation-duration:95s;animation-direction:reverse;opacity:.28;transform:scale(1.4)}
+@keyframes starDrift{from{transform:translate3d(0,0,0)}to{transform:translate3d(-46px,22px,0)}}
+.orb{position:absolute;right:-30px;top:50%;margin-top:-180px;width:640px;height:360px;opacity:.55}
+.orb-ring{fill:none;stroke:var(--accent);stroke-width:1;opacity:.34;stroke-dasharray:6 10;transform-box:fill-box;transform-origin:center;animation:orbSpin 42s linear infinite}
+.orb-ring.r2{stroke:var(--accent2);opacity:.26;animation-duration:66s;animation-direction:reverse}
+@keyframes orbSpin{to{transform:rotate(360deg)}}
+/* highest-risk spotlight schematic */
+.al-top{display:flex;gap:18px;align-items:center}.al-main{flex:1;min-width:0}
+.enc{width:200px;height:110px;flex:none;opacity:.95}
+.enc path{fill:none;stroke-width:1.5}
+.enc-a{stroke:var(--accent);opacity:.75}.enc-b{stroke:var(--pink);opacity:.75}
+.enc-miss{stroke:var(--amber);stroke-width:1.5;stroke-dasharray:2 2}
+.enc-pt.a{fill:var(--accent)}.enc-pt.b{fill:var(--pink)}
+.enc-t{fill:var(--dim);font-family:var(--mono);font-size:9px}
+/* trust strip */
+.trust{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:18px 0 2px}
+.trust-lab{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--faint);margin-right:2px}
+.chip{font-family:var(--mono);font-size:11px;color:var(--dim);border:1px solid var(--hair);border-radius:999px;padding:6px 12px;background:var(--panel2)}
+.chip b{color:var(--green);font-weight:600}
+/* pipeline ribbon */
+.ribbon{display:flex;align-items:center;gap:14px;margin-top:16px;border-top:1px solid var(--hair);padding-top:14px}
+.rb-lab{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--faint);flex:none}
+.rb-track{position:relative;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-family:var(--mono);font-size:12px}
+.rb-step{color:var(--ink)}.rb-sep{color:var(--faint);font-style:normal}
+.rb-dot{position:absolute;left:0;top:50%;margin-top:-3px;width:6px;height:6px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 10px 2px rgba(92,200,255,.7);animation:ribbonFlow 4.6s ease-in-out infinite}
+@keyframes ribbonFlow{0%{left:0;opacity:0}9%{opacity:1}88%{opacity:1}100%{left:100%;opacity:0}}
 
 /* ---- globe view ---- */
 .globe-wrap{position:relative;height:100%;background:radial-gradient(120% 90% at 70% 6%,rgba(20,40,80,.35),#05070e 72%)}
@@ -592,6 +724,8 @@ td.vok{color:var(--green)}
   .kpis{grid-template-columns:repeat(2,1fr)}.ov-grid,.mgrid,.about{grid-template-columns:1fr}
   .vgrid{grid-template-columns:1fr}.vsteps{grid-template-columns:1fr}
   .tb-meta{display:none}
+  .ov-hero{padding:24px 20px;min-height:0}.orb{display:none}.hero-cta{flex-wrap:wrap}
+  .al-top{flex-direction:column;align-items:stretch}.enc{width:100%}
 }
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 </style></head>
@@ -643,15 +777,34 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
   function esc(s){var d=document.createElement('div');d.textContent=String(s);return d.innerHTML}
   var TITLES={overview:'Overview',globe:'Orbital Globe',conjunctions:'Conjunctions',model:'Risk Model',methodology:'Methodology & Validation',about:'About'};
 
-  // count-ups
-  document.querySelectorAll('.count').forEach(function(el){
+  // count-up (fires when its tile scrolls into view)
+  function runCount(el){
+    if(el._c)return;el._c=1;
     var t=parseFloat(el.dataset.count),dec=+el.dataset.dec||0;
+    if(isNaN(t))return;
     if(reduce){el.textContent=fmt(t,dec);return}
-    var dur=900,s=null;function step(ts){if(!s)s=ts;var p=Math.min((ts-s)/dur,1),e=1-Math.pow(1-p,3);el.textContent=fmt(t*e,dec);if(p<1)requestAnimationFrame(step)}requestAnimationFrame(step);
+    var dur=1000,s=null;function step(ts){if(!s)s=ts;var p=Math.min((ts-s)/dur,1),e=1-Math.pow(1-p,3);el.textContent=fmt(t*e,dec);if(p<1)requestAnimationFrame(step)}requestAnimationFrame(step);
+  }
+  // reveal-on-scroll (air.inc-style stagger) + count-up trigger
+  var reveals=document.querySelectorAll('[data-reveal]');
+  function revealNow(el){el.classList.add('in');el.querySelectorAll('.count').forEach(runCount)}
+  if(reduce||!('IntersectionObserver' in window)){
+    reveals.forEach(revealNow);document.querySelectorAll('.count').forEach(runCount);
+  }else{
+    var io=new IntersectionObserver(function(ents){ents.forEach(function(en){if(en.isIntersecting){revealNow(en.target);io.unobserve(en.target)}})},
+      {threshold:.14,rootMargin:'0px 0px -36px 0px'});
+    reveals.forEach(function(el){io.observe(el)});
+    document.querySelectorAll('.count').forEach(function(c){if(!c.closest('[data-reveal]'))runCount(c)});
+  }
+  // cursor sheen on cards
+  if(!reduce)document.querySelectorAll('.kpi,.panel').forEach(function(el){
+    el.addEventListener('pointermove',function(e){var r=el.getBoundingClientRect();
+      el.style.setProperty('--mx',((e.clientX-r.left)/r.width*100)+'%');
+      el.style.setProperty('--my',((e.clientY-r.top)/r.height*100)+'%')});
   });
 
   // live UTC clock (top-right) — proves the page runs on real current time
-  function tickClock(){var el=document.getElementById('utcclock');if(el){el.textContent=new Date().toISOString().slice(11,19)+' UTC';}}
+  function tickClock(){var t=new Date().toISOString().slice(11,19);var el=document.getElementById('utcclock');if(el)el.textContent=t+' UTC';var h=document.getElementById('heroclock');if(h)h.textContent=t;}
   tickClock();setInterval(tickClock,1000);
 
   // light / dark theme (persisted)
@@ -800,6 +953,7 @@ def build_dashboard(payload: dict, path: str) -> str:
     events = payload["events"]
     globe = payload.get("globe", {"earth_radius_km": 6371.0, "sats": [], "sample_n": 0})
     comp = _load_comparison()
+    validation = _load_validation()
 
     nav = "".join(
         f'<a class="nitem{" active" if key == "overview" else ""}" data-view="{key}">'
@@ -817,11 +971,11 @@ def build_dashboard(payload: dict, path: str) -> str:
 
     small = {
         "__NAV__": nav,
-        "__OVERVIEW__": _overview(summary, meta, events),
+        "__OVERVIEW__": _overview(summary, meta, events, validation),
         "__GLOBE__": _globe_view(globe.get("sample_n", 0)),
         "__CONJ__": _conjunctions_view(events),
         "__MODEL__": _model_view(comp),
-        "__METHOD__": _validation_view(_load_validation()),
+        "__METHOD__": _validation_view(validation),
         "__ABOUT__": _about_view(summary, meta),
         "__NOBJ__": f"{meta.get('n_objects', 0):,}",
         "__NEVT__": f"{summary.get('n_events', 0):,}",
