@@ -36,9 +36,17 @@ def to_dataframe(ranked: List[RankedEvent]) -> pd.DataFrame:
                 "rel_speed_kms": round(e.rel_speed_kms, 3),
                 "alt_km": round(e.alt_km, 1),
                 "risk_score": round(re.risk_score, 1),
+                "pc": _fmt_pc(getattr(e, "pc", float("nan"))),
+                "pc_max": _fmt_pc(getattr(e, "pc_max", float("nan"))),
             }
         )
     return pd.DataFrame(rows)
+
+
+def _fmt_pc(pc):
+    """Pc as a compact float (or None) — kept full precision for the CSV/JSON."""
+    import math
+    return None if pc is None or (isinstance(pc, float) and math.isnan(pc)) else float(f"{pc:.3e}")
 
 
 def write_csv(ranked: List[RankedEvent], path: str) -> str:
@@ -183,6 +191,7 @@ def build_json(
                     "miss_km": round(e.miss_km, 3),
                     "rel_speed_kms": round(e.rel_speed_kms, 3),
                     "risk_score": round(re.risk_score, 1),
+                    "pc": _fmt_pc(getattr(e, "pc", float("nan"))),
                     "arc_a": _orbit_arc(sat_i, e.tca_utc, 12, 20, ts),
                     "arc_b": _orbit_arc(sat_j, e.tca_utc, 12, 20, ts),
                     "point_a": sat_i.at(_single_time(e.tca_utc, ts)).position.km.tolist(),

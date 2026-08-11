@@ -21,8 +21,18 @@ from typing import Optional
 import numpy as np
 from skyfield.api import EarthSatellite, load
 
+from . import risk_pc as _risk_pc
 from .propagate import PositionCube
 from .screen import CandidateEvent
+
+
+def _tle_age_days(sat, at_dt) -> float:
+    """Days between a satellite's TLE epoch and ``at_dt`` (>= 0)."""
+    try:
+        epoch = sat.epoch.utc_datetime().replace(tzinfo=None)
+        return max((at_dt - epoch).total_seconds() / 86400.0, 0.0)
+    except Exception:
+        return 0.0
 
 
 @dataclass
@@ -38,6 +48,10 @@ class RefinedEvent:
     coarse_miss_km: float
     rel_speed_kms: float
     alt_km: float  # geocentric radius midpoint minus Earth radius, rough altitude
+    pc: float = float("nan")          # Foster 2-D Pc under assumed covariance
+    pc_max: float = float("nan")      # worst-case (max) Pc
+    rel_pos_rtn_km: tuple = (0.0, 0.0, 0.0)   # miss vector in object-A RTN frame
+    rel_vel_rtn_kms: tuple = (0.0, 0.0, 0.0)  # relative velocity in object-A RTN frame
 
 
 _EARTH_RADIUS_KM = 6371.0
@@ -78,6 +92,7 @@ def refine_event(
     *,
     bracket_s: float = 45.0,
     step_s: float = 1.0,
+    hbr_m: float = _risk_pc.DEFAULT_HBR_M,
     ts=None,
 ) -> RefinedEvent:
     """Refine one candidate to a precise TCA, miss distance and closing speed.
@@ -122,9 +137,28 @@ def refine_event(
 
     tca_dt = flag_dt + _dt.timedelta(seconds=float(offs[k] + dT))
     rel_speed = float(np.sqrt(vv))
-    r_i = np.linalg.norm(ei.position.km[:, k])
-    r_j = np.linalg.norm(ej.position.km[:, k])
+    pos_a = ei.position.km[:, k]; vel_a = ei.velocity.km_per_s[:, k]
+    pos_b = ej.position.km[:, k]; vel_b = ej.velocity.km_per_s[:, k]
+    r_i = np.linalg.norm(pos_a)
+    r_j = np.linalg.norm(pos_b)
     alt_km = float((r_i + r_j) / 2.0 - _EARTH_RADIUS_KM)
+
+    # --- Probability of Collision (Foster 2-D, under assumed covariance) ---------
+    r_miss = r + v * dT                                    # miss vector at TCA (km)
+    pc = pc_max = float("nan")
+    rel_pos_rtn = rel_vel_rtn = (0.0, 0.0, 0.0)
+    if vv > 1e-9:
+        try:
+            age_a = _tle_age_days(sat_i, flag_dt)
+            age_b = _tle_age_days(sat_j, flag_dt)
+            ca = _risk_pc.rtn_to_eci_cov(pos_a * 1e3, vel_a * 1e3, *_risk_pc.assumed_rtn_sigma(age_a))
+            cb = _risk_pc.rtn_to_eci_cov(pos_b * 1e3, vel_b * 1e3, *_risk_pc.assumed_rtn_sigma(age_b))
+            pc = float(_risk_pc.foster_pc(r_miss * 1e3, v * 1e3, ca, cb, hbr_m))
+            pc_max = float(_risk_pc.max_pc(r_miss * 1e3, v * 1e3, ca, cb, hbr_m))
+            rel_pos_rtn = _risk_pc.eci_to_rtn(pos_a, vel_a, r_miss)
+            rel_vel_rtn = _risk_pc.eci_to_rtn(pos_a, vel_a, v)
+        except Exception:
+            pass
 
     return RefinedEvent(
         i=event.i,
@@ -138,4 +172,8 @@ def refine_event(
         coarse_miss_km=float(event.dist_min_km),
         rel_speed_kms=rel_speed,
         alt_km=alt_km,
+        pc=pc,
+        pc_max=pc_max,
+        rel_pos_rtn_km=rel_pos_rtn,
+        rel_vel_rtn_kms=rel_vel_rtn,
     )

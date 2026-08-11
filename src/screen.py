@@ -69,6 +69,8 @@ def parse_args(argv=None):
                    help="Skip building the HTML dashboard")
     p.add_argument("--top-geometry", type=int, default=5,
                    help="How many top events to embed 3D geometry for (default: 5)")
+    p.add_argument("--hbr", type=float, default=10.0, dest="hbr_m",
+                   help="Combined hard-body radius in metres for the Pc calc (default: 10)")
     p.add_argument("--quiet", action="store_true", help="Suppress progress logging")
     return p.parse_args(argv)
 
@@ -82,6 +84,7 @@ def _run_once(args, *, force_download: bool) -> None:
         max_objects=args.max_objects,
         data_dir=args.data_dir,
         force_download=force_download,
+        hbr_m=args.hbr_m,
         verbose=not args.quiet,
     )
 

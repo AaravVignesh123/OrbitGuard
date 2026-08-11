@@ -40,6 +40,7 @@ def run(
     start: Optional[_dt.datetime] = None,
     data_dir: str = "data",
     force_download: bool = False,
+    hbr_m: float = 10.0,
     verbose: bool = True,
 ) -> PipelineResult:
     ts = load.timescale()
@@ -72,7 +73,7 @@ def run(
     log(f"[4/5] Refining TCA + miss distance for {len(events)} events ...")
     refined = []
     for ev in events:
-        r = _refine.refine_event(cat.sats[ev.i], cat.sats[ev.j], cube, ev, ts=ts)
+        r = _refine.refine_event(cat.sats[ev.i], cat.sats[ev.j], cube, ev, hbr_m=hbr_m, ts=ts)
         refined.append(r)
 
     log("[5/5] Ranking by risk ...")
@@ -90,6 +91,10 @@ def run(
         "generated_utc": _dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         "runtime_s": round(time.time() - t0, 1),
         "orbitguard_version": __import__("orbitguard").__version__,
+        "pc_hbr_m": hbr_m,
+        "pc_sigma_note": ("Foster 2-D Pc under assumed RTN covariance "
+                          "(σ_R≈200m, σ_T≈500m + 1km/day TLE age, σ_N≈200m); "
+                          f"hard-body radius {hbr_m:.0f} m. TLEs carry no covariance."),
     }
     sats_by_index = {ev.i: cat.sats[ev.i] for ev in events}
     sats_by_index.update({ev.j: cat.sats[ev.j] for ev in events})

@@ -171,9 +171,18 @@ def _globe_view(sample_n) -> str:
 """
 
 
+def _pc_str(pc) -> str:
+    import math
+    if pc is None or (isinstance(pc, float) and math.isnan(pc)):
+        return "—"
+    if pc < 1e-12:
+        return "&lt;1e-12"
+    return f"{pc:.1e}"
+
+
 def _conjunctions_view(events) -> str:
     head = ("<tr><th>#</th><th>Object A</th><th>Object B</th><th>TCA (UTC)</th>"
-            "<th>Miss (km)</th><th>Rel. speed</th><th>Alt (km)</th><th>Risk</th></tr>")
+            "<th>Miss (km)</th><th>Rel. speed</th><th>Alt (km)</th><th>Pc</th><th>Risk</th></tr>")
     rows = []
     for e in events[:60]:
         chip = f'<span class="risk" style="--rh:{_hue(e["risk_score"])}">{e["risk_score"]:.0f}</span>'
@@ -186,6 +195,7 @@ def _conjunctions_view(events) -> str:
             f"<td class='mono num'>{e['miss_km']:.3f}</td>"
             f"<td class='mono num'>{e['rel_speed_kms']:.2f}</td>"
             f"<td class='mono num'>{e['alt_km']:.0f}</td>"
+            f"<td class='mono num'>{_pc_str(e.get('pc'))}</td>"
             f"<td>{chip}</td></tr>"
         )
     return f"""
@@ -195,8 +205,10 @@ def _conjunctions_view(events) -> str:
   <span id="ogfocusinfo" class="focusinfo"></span>
 </div>
 <div class="panel tablewrap"><table><thead>{head}</thead><tbody id="ogbody">{''.join(rows)}</tbody></table></div>
-<div class="note">Risk is a v1 proxy = closing speed / (miss distance + 0.2 km), log-scaled 0–100. Not a formal
-probability of collision — the learned model is under <b>Risk Model</b>.</div>
+<div class="note"><b>Pc</b> = Foster 2-D probability of collision under an <em>assumed</em> covariance
+(along-track 1-σ ≈ 0.5 km + 1 km/day of TLE age; hard-body radius 10 m) — public TLEs carry no
+covariance, so treat Pc as an order-of-magnitude estimate, not an operational number. <b>Risk</b> is the
+v1 geometric proxy (closing speed / miss), log-scaled 0–100. See <b>Methodology</b> for the method and limits.</div>
 """
 
 
@@ -266,7 +278,12 @@ def _validation_view(val) -> str:
          "then run at scale.", "screen.py"),
         ("03", "Refine", "Analytic close-approach: from relative position/velocity, "
          "ΔT = −(r·v)/|v|², miss = |r + v·ΔT|. Exact for linear relative motion.", "refine.py"),
-        ("04", "Rank", "Closing speed / (miss + ε), log-scaled — an explicit, inspectable proxy.", "risk.py"),
+        ("04", "Pc", "Foster 2-D probability of collision: project the combined covariance onto the "
+         "encounter plane (⟂ relative velocity) and integrate a 2-D Gaussian over the hard-body disk. "
+         "Public TLEs carry no covariance, so we use a documented assumed RTN covariance — Pc is an "
+         "order-of-magnitude estimate, and we also report the worst-case max-Pc.", "risk_pc.py"),
+        ("05", "Rank", "A geometric proxy (closing speed / miss, log-scaled 0–100) for quick triage, "
+         "shown alongside Pc.", "risk.py"),
     ]
     steps = "".join(
         f'<div class="vstep"><div class="vs-num">{n}</div><div><h4>{t}'
@@ -605,11 +622,13 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
 
   // focus search (conjunctions)
   var body=document.getElementById('ogbody'),inp=document.getElementById('ogfocus'),info=document.getElementById('ogfocusinfo');
+  function pcStr(pc){if(pc==null)return '—';if(pc<1e-12)return '<1e-12';return pc.toExponential(1);}
   function rowHtml(e){var hue=Math.round(48-0.48*Math.min(e.rs,100));
     return '<tr><td class="rank">'+e.r+'</td><td>'+esc(e.a)+'<span class="norad">NORAD '+e.na+'</span></td>'+
       '<td>'+esc(e.b)+'<span class="norad">NORAD '+e.nb+'</span></td><td class="mono">'+e.t+'</td>'+
       '<td class="mono num">'+e.m.toFixed(3)+'</td><td class="mono num">'+e.v.toFixed(2)+'</td>'+
-      '<td class="mono num">'+Math.round(e.al)+'</td><td><span class="risk" style="--rh:'+hue+'">'+Math.round(e.rs)+'</span></td></tr>'}
+      '<td class="mono num">'+Math.round(e.al)+'</td><td class="mono num">'+pcStr(e.pc)+'</td>'+
+      '<td><span class="risk" style="--rh:'+hue+'">'+Math.round(e.rs)+'</span></td></tr>'}
   function render(list,lim){var o='',n=Math.min(list.length,lim||60);for(var i=0;i<n;i++)o+=rowHtml(list[i]);if(body)body.innerHTML=o}
   function applyFocus(){if(!body||!OG_EVENTS)return;var q=(inp.value||'').trim().toLowerCase();
     if(!q){render(OG_EVENTS,60);info.textContent=OG_EVENTS.length.toLocaleString('en-US')+' conjunctions · top 60 by risk';return}
@@ -698,7 +717,8 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
     function updInfo(g){if(!ci)return;if(!g){ci.innerHTML='';return}
       ci.innerHTML='<div class="ci-lab">SELECTED CONJUNCTION</div><div class="ci-pair"><span class="a">'+esc(g.object_a)+'</span> ↔ <span class="b">'+esc(g.object_b)+'</span></div>'+
         '<div class="ci-grid"><div><span>MISS</span><b>'+g.miss_km.toFixed(2)+' km</b></div><div><span>CLOSING</span><b>'+g.rel_speed_kms.toFixed(1)+' km/s</b></div>'+
-        '<div><span>RISK</span><b>'+Math.round(g.risk_score)+'</b></div><div><span>TCA</span><b style="font-size:11px">'+esc(g.tca_utc.slice(5,16))+'</b></div></div>'}
+        '<div><span>Pc (assumed cov)</span><b>'+pcStr(g.pc)+'</b></div><div><span>RISK</span><b>'+Math.round(g.risk_score)+'</b></div>'+
+        '<div><span>TCA</span><b style="font-size:11px">'+esc(g.tca_utc.slice(5,16))+'</b></div></div>'}
     if(sel&&OG_GEOM&&OG_GEOM.length){OG_GEOM.forEach(function(g,i){var o=document.createElement('option');o.value=i;o.textContent='#'+g.rank+'  '+g.object_a+' ↔ '+g.object_b+'  ('+g.miss_km.toFixed(2)+' km)';sel.appendChild(o)});
       sel.addEventListener('change',function(){var g=OG_GEOM[+sel.value];drawConj(g);updInfo(g)});drawConj(OG_GEOM[0]);updInfo(OG_GEOM[0])}else if(sel)sel.style.display='none';
     var lastUpd=0;
@@ -736,7 +756,7 @@ def build_dashboard(payload: dict, path: str) -> str:
         {"r": e["rank"], "a": e["object_a"], "na": e["norad_a"], "b": e["object_b"],
          "nb": e["norad_b"], "t": e["tca_utc"], "m": round(e["miss_km"], 3),
          "v": round(e["rel_speed_kms"], 2), "al": round(e["alt_km"], 0),
-         "rs": round(e["risk_score"], 1)}
+         "rs": round(e["risk_score"], 1), "pc": e.get("pc")}
         for e in events
     ]
 
