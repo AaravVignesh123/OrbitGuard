@@ -60,6 +60,29 @@ def write_csv(ranked: List[RankedEvent], path: str) -> str:
     return path
 
 
+def _sat_tle_lines(sat):
+    """Regenerate the (line1, line2) TLE for a Skyfield satellite, or None.
+
+    Lets the web globe run live SGP4 on the exact conjunction objects (for the
+    time-scrubber). Reconstructed from the satrec so we don't thread raw lines.
+    """
+    try:
+        from sgp4.exporter import export_tle
+        l1, l2 = export_tle(sat.model)
+        if l1 and l2:
+            return l1, l2
+    except Exception:
+        pass
+    return None
+
+
+def _sat_norad(sat):
+    try:
+        return int(sat.model.satnum)
+    except Exception:
+        return None
+
+
 def _orbit_arc(sat, tca_dt: _dt.datetime, minutes: float, step_s: float, ts) -> list:
     """Sample an object's position (km, GCRS) around TCA for plotting."""
     n = int(round(2 * minutes * 60 / step_s)) + 1
@@ -143,20 +166,22 @@ def build_globe_tles(tle_path: str, *, sample_n: int = 700) -> dict:
     while i < n:
         name = lines[i].strip()
         if name.startswith("1 ") or name.startswith("2 "):
-            l1, l2 = name, lines[i + 1] if i + 1 < n else ""
+            nm, l1, l2 = "", name, lines[i + 1] if i + 1 < n else ""
             i += 2
         else:
+            nm = name.lstrip("0 ").strip()
             l1 = lines[i + 1] if i + 1 < n else ""
             l2 = lines[i + 2] if i + 2 < n else ""
             i += 3
         if l1.startswith("1 ") and l2.startswith("2 "):
-            recs.append((l1, l2))
+            recs.append((nm, l1, l2))
 
     if len(recs) > sample_n:
         idx = np.linspace(0, len(recs) - 1, sample_n).astype(int)
         recs = [recs[k] for k in idx]
 
-    tles = [{"l1": l1, "l2": l2, "b": _tle_altitude_band(l2)} for l1, l2 in recs]
+    tles = [{"l1": l1, "l2": l2, "b": _tle_altitude_band(l2), "nm": nm}
+            for nm, l1, l2 in recs]
     return {"earth_radius_km": 6371.0, "sample_n": len(tles), "tles": tles}
 
 
@@ -192,6 +217,7 @@ def build_json(
                     "object_a": e.name_i,
                     "object_b": e.name_j,
                     "tca_utc": e.tca_utc.strftime("%Y-%m-%d %H:%M:%S"),
+                    "tca_ms": int(e.tca_utc.replace(tzinfo=_dt.timezone.utc).timestamp() * 1000),
                     "miss_km": round(e.miss_km, 3),
                     "rel_speed_kms": round(e.rel_speed_kms, 3),
                     "risk_score": round(re.risk_score, 1),
@@ -202,8 +228,17 @@ def build_json(
                     "arc_b": _orbit_arc(sat_j, e.tca_utc, 12, 20, ts),
                     "point_a": sat_i.at(_single_time(e.tca_utc, ts)).position.km.tolist(),
                     "point_b": sat_j.at(_single_time(e.tca_utc, ts)).position.km.tolist(),
+                    "norad_a": _sat_norad(sat_i),
+                    "norad_b": _sat_norad(sat_j),
                 }
             )
+            # Ship the pair's TLE lines so the browser can live-propagate them for
+            # the time-scrubber (omitted gracefully if export fails).
+            tle_a = _sat_tle_lines(sat_i)
+            tle_b = _sat_tle_lines(sat_j)
+            if tle_a and tle_b:
+                geometry[-1]["l1_a"], geometry[-1]["l2_a"] = tle_a
+                geometry[-1]["l1_b"], geometry[-1]["l2_b"] = tle_b
 
     payload = {
         "meta": meta,

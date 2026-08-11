@@ -152,8 +152,10 @@ def refine_event(
         try:
             age_a = _tle_age_days(sat_i, flag_dt)
             age_b = _tle_age_days(sat_j, flag_dt)
-            ca = _risk_pc.rtn_to_eci_cov(pos_a * 1e3, vel_a * 1e3, *_risk_pc.assumed_rtn_sigma(age_a))
-            cb = _risk_pc.rtn_to_eci_cov(pos_b * 1e3, vel_b * 1e3, *_risk_pc.assumed_rtn_sigma(age_b))
+            alt_a = float(r_i - _EARTH_RADIUS_KM)   # per-object altitude → drag-scaled σ
+            alt_b = float(r_j - _EARTH_RADIUS_KM)
+            ca = _risk_pc.rtn_to_eci_cov(pos_a * 1e3, vel_a * 1e3, *_risk_pc.assumed_rtn_sigma(age_a, alt_a))
+            cb = _risk_pc.rtn_to_eci_cov(pos_b * 1e3, vel_b * 1e3, *_risk_pc.assumed_rtn_sigma(age_b, alt_b))
             pc = float(_risk_pc.foster_pc(r_miss * 1e3, v * 1e3, ca, cb, hbr_m))
             pc_max = float(_risk_pc.max_pc(r_miss * 1e3, v * 1e3, ca, cb, hbr_m))
             rel_pos_rtn = _risk_pc.eci_to_rtn(pos_a, vel_a, r_miss)

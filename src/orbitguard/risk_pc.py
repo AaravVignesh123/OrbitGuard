@@ -25,24 +25,48 @@ Handbook Appendix N; Flohrer et al. 2008 (TLE error magnitudes).
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
-# Assumed defaults — Pc is very sensitive to these; document + tune (Flohrer 2008).
+# Covariance model params — Pc is very sensitive to these. Values are a documented
+# MODEL calibrated to published TLE-error magnitudes (Flohrer et al. 2008 "Assessment
+# and Categorization of TLE Orbit Errors"; Vallado & Cefola 2012; Geul et al. 2017),
+# NOT a per-object fit. TLE position error is along-track dominant, grows with the age
+# of the element set, and grows faster low in LEO where drag mismodelling bites hardest.
 DEFAULT_HBR_M = 10.0          # combined hard-body radius (m): ~5 m + 5 m objects
-DEFAULT_SIGMA_R_M = 200.0     # radial 1-σ (m)
+DEFAULT_SIGMA_R_M = 200.0     # radial 1-σ at epoch (m) — ~stable
 DEFAULT_SIGMA_T_M = 500.0     # along-track 1-σ at epoch (m) — dominant for TLEs
-DEFAULT_SIGMA_N_M = 200.0     # cross-track 1-σ (m)
-DEFAULT_ALONGTRACK_GROWTH_M_PER_DAY = 1000.0   # σ_T grows ~1 km per day of TLE age
+DEFAULT_SIGMA_N_M = 200.0     # cross-track 1-σ at epoch (m)
+DEFAULT_ALONGTRACK_GROWTH_M_PER_DAY = 1000.0   # along-track growth at ~800 km (m/day)
+_REF_ALT_KM = 800.0           # altitude where the drag factor is 1.0
+_DRAG_SCALE_HEIGHT_KM = 350.0 # e-folding of the drag factor with altitude
+_SIGMA_T_CAP_M = 20000.0      # keep σ_T physical for very old / very low elements
+
+
+def _drag_factor(alt_km: float) -> float:
+    """Along-track error grows faster low in LEO (drag), slower higher up.
+
+    ~3× at 400 km, 1× at the 800 km reference, ~0.15× at 1500 km. Clamped to the
+    250–2000 km band the model is calibrated for.
+    """
+    a = min(max(alt_km, 250.0), 2000.0)
+    return float(math.exp((_REF_ALT_KM - a) / _DRAG_SCALE_HEIGHT_KM))
 
 
 def assumed_rtn_sigma(tle_age_days: float = 0.0, alt_km: float | None = None) -> tuple:
-    """Assumed (σ_R, σ_T, σ_N) in METERS for a TLE-propagated state.
+    """Modelled (σ_R, σ_T, σ_N) in METERS for a TLE-propagated state.
 
-    Convention (not derived physics): along-track dominates and grows with TLE age.
+    Altitude- and age-scaled (see module notes): along-track dominates and grows with
+    TLE age at a drag-dependent rate; cross-track grows mildly with age; radial is
+    ~stable. A documented model, not a per-object estimate.
     """
+    age = max(tle_age_days, 0.0)
+    drag = _drag_factor(alt_km if alt_km is not None else 550.0)
     sr = DEFAULT_SIGMA_R_M
-    st = DEFAULT_SIGMA_T_M + DEFAULT_ALONGTRACK_GROWTH_M_PER_DAY * max(tle_age_days, 0.0)
-    sn = DEFAULT_SIGMA_N_M
+    st = min(DEFAULT_SIGMA_T_M + DEFAULT_ALONGTRACK_GROWTH_M_PER_DAY * drag * age,
+             _SIGMA_T_CAP_M)
+    sn = DEFAULT_SIGMA_N_M * (1.0 + 0.15 * age)
     return (sr, st, sn)
 
 

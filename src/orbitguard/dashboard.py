@@ -145,7 +145,7 @@ def _trust_strip(validation) -> str:
             f'<span class="chip">SOCRATES ~{soc["median_miss_diff_m"]:.0f} m '
             f'(n={soc.get("n_checked", "?")})</span>'
         )
-    chips.append('<span class="chip">Pc · Foster 2-D</span>')
+    chips.append('<span class="chip">Pc · Foster 2-D · modelled cov</span>')
     return ('<div class="trust" data-reveal><span class="trust-lab">VALIDATED</span>'
             + "".join(chips) + '</div>')
 
@@ -229,14 +229,25 @@ def _globe_view(sample_n) -> str:
     <div id="gsrc" class="gsrc"><span class="dot warn"></span>fetching live catalogue…</div>
     <select id="conjsel" aria-label="highlighted conjunction"></select>
     <div id="conjinfo" class="conjinfo"></div>
+    <div id="scrubwrap" class="scrubwrap" style="display:none">
+      <div class="scrub-lab">TIME · WATCH THE APPROACH</div>
+      <div class="scrub-row">
+        <button id="scrubplay" class="scrub-btn" aria-label="play through the encounter">▶</button>
+        <input id="scrub" type="range" min="-1800" max="1800" value="0" step="10" aria-label="time around closest approach">
+        <button id="scrublive" class="scrub-btn live" title="return to real time">● LIVE</button>
+      </div>
+      <div class="scrub-read"><b id="scrubdt">±00:00</b><span>to TCA · miss</span><b id="scrubmiss" class="scrub-miss">— km</b></div>
+    </div>
   </div>
+  <div id="gpick" class="gpick" style="display:none"></div>
   <div class="ghud ghud-bl glegend">
     <span><i class="sw" style="background:#5cc8ff"></i>live positions · fetched from CelesTrak now</span>
     <span><i class="sw" style="background:#5cc8ff"></i>conjunction · object A</span>
     <span><i class="sw" style="background:#ff4d8d"></i>conjunction · object B</span>
     <span><i class="sw" style="background:#f5a524"></i>miss distance</span>
     <span class="gnote">TLEs fetched live in-browser from CelesTrak, propagated by SGP4 to the current instant;
-    Earth oriented by sidereal time so each object sits over its true sub-point. Conjunction analysis is from the last screening run.</span>
+    Earth oriented by sidereal time so each object sits over its true sub-point. Conjunction analysis is from the last screening run.
+    Pick a conjunction and drag the time slider to watch the pass; click any satellite to inspect it.</span>
   </div>
   <div id="globefallback" class="globefallback">Fetching live catalogue from CelesTrak…</div>
 </div>
@@ -259,7 +270,7 @@ def _conjunctions_view(events) -> str:
     for e in events[:60]:
         chip = f'<span class="risk" style="--rh:{_hue(e["risk_score"])}">{e["risk_score"]:.0f}</span>'
         rows.append(
-            "<tr>"
+            f"<tr class='crow' data-rank='{e['rank']}'>"
             f"<td class='rank'>{e['rank']}</td>"
             f"<td>{html.escape(str(e['object_a']))}<span class='norad'>NORAD {e['norad_a']}</span></td>"
             f"<td>{html.escape(str(e['object_b']))}<span class='norad'>NORAD {e['norad_b']}</span></td>"
@@ -276,10 +287,12 @@ def _conjunctions_view(events) -> str:
   <input id="ogfocus" type="text" autocomplete="off" spellcheck="false" placeholder="Focus a satellite — name or NORAD id (e.g. STARLINK-30876 or 57154)">
   <span id="ogfocusinfo" class="focusinfo"></span>
 </div>
+<div class="rowhint mono">Click any row to open it on the globe and scrub through the approach.</div>
 <div class="panel tablewrap"><table><thead>{head}</thead><tbody id="ogbody">{''.join(rows)}</tbody></table></div>
-<div class="note"><b>Pc</b> = Foster 2-D probability of collision under an <em>assumed</em> covariance
-(along-track 1-σ ≈ 0.5 km + 1 km/day of TLE age; hard-body radius 10 m) — public TLEs carry no
-covariance, so treat Pc as an order-of-magnitude estimate, not an operational number. <b>Risk</b> is the
+<div class="note"><b>Pc</b> = Foster 2-D probability of collision under a <em>modelled</em> covariance —
+altitude- + TLE-age-scaled (along-track 1-σ ≈ 0.5 km at epoch, growing ~1 km/day at 800 km and faster
+low in LEO; hard-body radius 10 m), calibrated to published TLE-error magnitudes. Public TLEs carry no
+covariance of their own, so treat Pc as an order-of-magnitude estimate, not an operational number. <b>Risk</b> is the
 v1 geometric proxy (closing speed / miss), log-scaled 0–100. See <b>Methodology</b> for the method and limits.</div>
 """
 
@@ -362,7 +375,8 @@ def _validation_view(val) -> str:
          "ΔT = −(r·v)/|v|², miss = |r + v·ΔT|. Exact for linear relative motion.", "refine.py"),
         ("04", "Pc", "Foster 2-D probability of collision: project the combined covariance onto the "
          "encounter plane (⟂ relative velocity) and integrate a 2-D Gaussian over the hard-body disk. "
-         "Public TLEs carry no covariance, so we use a documented assumed RTN covariance — Pc is an "
+         "Public TLEs carry no covariance, so we model an RTN covariance scaled by altitude and TLE age "
+         "(drag-driven along-track growth), calibrated to published TLE-error magnitudes — Pc is an "
          "order-of-magnitude estimate, and we also report the worst-case max-Pc.", "risk_pc.py"),
         ("05", "Rank", "A geometric proxy (closing speed / miss, log-scaled 0–100) for quick triage, "
          "shown alongside Pc.", "risk.py"),
@@ -471,9 +485,9 @@ def _about_view(summary, meta) -> str:
     <p class="disclaimer">Scope: a screening / analysis <b>demonstrator</b> on public TLEs — <b>not</b> an
     operational or safety-certified system, and not a replacement for covariance-based services (CARA,
     SOCRATES, commercial SSA). Public TLEs are ~km-accurate and carry no covariance, so the <b>Pc</b> is a
-    Foster 2-D probability under an <em>assumed</em> covariance — an order-of-magnitude estimate,
-    cross-checked against SOCRATES in <b>Methodology</b>. Validate against CelesTrak SOCRATES before any
-    operational use.</p>
+    Foster 2-D probability under a <em>modelled</em> covariance (altitude- + TLE-age-scaled) — an
+    order-of-magnitude estimate, cross-checked against SOCRATES in <b>Methodology</b>. Validate against
+    CelesTrak SOCRATES before any operational use.</p>
   </div>
   <div class="panel">
     <div class="p-head">ROADMAP</div>
@@ -663,6 +677,22 @@ code{font-family:var(--mono);background:#0a1020;border:1px solid var(--hair);bor
 .glegend .sw{width:9px;height:9px;border-radius:2px;display:inline-block}
 .glegend .gnote{color:var(--faint);font-size:9px;max-width:230px;line-height:1.4;margin-top:2px}
 .globefallback{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;color:var(--faint);font-family:var(--mono);font-size:12px;letter-spacing:.1em}
+/* time-scrubber */
+.scrubwrap{pointer-events:auto;margin-top:10px;background:rgba(9,13,24,.86);border:1px solid var(--hair2);border-radius:11px;padding:11px 13px;backdrop-filter:blur(6px)}
+.scrub-lab{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--faint);margin-bottom:8px}
+.scrub-row{display:flex;align-items:center;gap:9px}
+.scrub-btn{flex:none;background:transparent;border:1px solid var(--hair2);color:var(--ink);border-radius:8px;height:26px;min-width:30px;padding:0 8px;cursor:pointer;font-family:var(--mono);font-size:11px;line-height:1}
+.scrub-btn:hover{border-color:var(--accent);color:var(--accent)}
+.scrub-btn.live{color:var(--green);border-color:rgba(58,211,154,.4)}.scrub-btn.live:hover{background:rgba(58,211,154,.1)}
+.scrubwrap input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--pink));outline:none}
+.scrubwrap input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--ink);border:2px solid var(--accent);cursor:pointer}
+.scrubwrap input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--ink);border:2px solid var(--accent);cursor:pointer}
+.scrub-read{display:flex;align-items:center;gap:8px;margin-top:9px;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.scrub-read b{color:var(--ink);font-weight:600}.scrub-read .scrub-miss{margin-left:auto;color:var(--amber)}
+.gpick{position:absolute;z-index:6;pointer-events:none;background:rgba(9,13,24,.92);border:1px solid var(--hair2);border-radius:9px;padding:8px 11px;max-width:200px;backdrop-filter:blur(6px)}
+.gpick b{display:block;font-size:12px;color:var(--ink);margin-bottom:2px}.gpick span{font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+.gtoast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(12px);z-index:50;background:var(--panel);border:1px solid var(--hair2);color:var(--ink);font-size:12.5px;border-radius:10px;padding:10px 16px;opacity:0;pointer-events:none;transition:opacity .3s,transform .3s;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.gtoast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* ---- tables / focus ---- */
 .focusbar{display:flex;align-items:center;gap:10px;border:1px solid var(--hair2);border-radius:11px;background:var(--panel);padding:10px 14px;margin-bottom:14px;color:var(--faint)}
@@ -670,12 +700,15 @@ code{font-family:var(--mono);background:#0a1020;border:1px solid var(--hair);bor
 .focusbar input{flex:1;background:transparent;border:0;outline:none;color:var(--ink);font-family:var(--mono);font-size:13px}
 .focusbar input::placeholder{color:var(--faint)}.focusbar:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(92,200,255,.1)}
 .focusinfo{font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;flex:none}
+.rowhint{font-size:10.5px;letter-spacing:.06em;color:var(--faint);margin:0 2px 8px}
 .tablewrap{padding:6px 6px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--hair)}
 th{color:var(--faint);font-family:var(--mono);font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:.09em}
 td.num,th:nth-child(n+5){text-align:right}
 tbody tr:hover td{background:rgba(92,200,255,.05)}
+tr.crow{cursor:pointer}tr.crow:hover td:first-child{color:var(--ink)}
+tr.crow:hover td:first-child::before{content:"▶ ";color:var(--accent);font-size:9px}
 .rank{color:var(--accent);font-family:var(--mono);font-weight:600}
 .norad{display:block;color:var(--faint);font-size:10px;font-family:var(--mono);margin-top:1px}
 
@@ -828,11 +861,20 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
   }
   document.addEventListener('click',function(e){var t=e.target.closest('[data-view]');if(t)show(t.dataset.view)});
 
+  // table row -> open on globe, highlighted + scrub-ready
+  var _toast=null;
+  function toast(msg){var el=document.getElementById('gtoast');if(!el){el=document.createElement('div');el.id='gtoast';el.className='gtoast';document.body.appendChild(el);}
+    el.textContent=msg;el.classList.add('show');clearTimeout(_toast);_toast=setTimeout(function(){el.classList.remove('show')},2600);}
+  document.addEventListener('click',function(e){var row=e.target.closest('.crow');if(!row)return;
+    var rank=+row.dataset.rank;show('globe');
+    setTimeout(function(){var ok=globeApi.selectConjByRank&&globeApi.selectConjByRank(rank);
+      if(!ok)toast('3-D geometry is embedded for the top '+((OG_GEOM&&OG_GEOM.length)||0)+' conjunctions — showing the globe.');},60);});
+
   // focus search (conjunctions)
   var body=document.getElementById('ogbody'),inp=document.getElementById('ogfocus'),info=document.getElementById('ogfocusinfo');
   function pcStr(pc){if(pc==null)return '—';if(pc<1e-12)return '<1e-12';return pc.toExponential(1);}
   function rowHtml(e){var hue=Math.round(48-0.48*Math.min(e.rs,100));
-    return '<tr><td class="rank">'+e.r+'</td><td>'+esc(e.a)+'<span class="norad">NORAD '+e.na+'</span></td>'+
+    return '<tr class="crow" data-rank="'+e.r+'"><td class="rank">'+e.r+'</td><td>'+esc(e.a)+'<span class="norad">NORAD '+e.na+'</span></td>'+
       '<td>'+esc(e.b)+'<span class="norad">NORAD '+e.nb+'</span></td><td class="mono">'+e.t+'</td>'+
       '<td class="mono num">'+e.m.toFixed(3)+'</td><td class="mono num">'+e.v.toFixed(2)+'</td>'+
       '<td class="mono num">'+Math.round(e.al)+'</td><td class="mono num">'+pcStr(e.pc)+'</td>'+
@@ -877,7 +919,7 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
     // --- LIVE SGP4: build orbit shells + current positions from a TLE set (satellite.js) ---
     function buildSats(tles){
       clearSats();
-      var recs=[];tles.forEach(function(t){try{var sr=satellite.twoline2satrec(t.l1,t.l2);if(sr&&!sr.error)recs.push({sr:sr,b:bandOf(sr)});}catch(e){}});
+      var recs=[];tles.forEach(function(t){try{var sr=satellite.twoline2satrec(t.l1,t.l2);if(sr&&!sr.error)recs.push({sr:sr,b:bandOf(sr),nm:t.nm||'',satnum:sr.satnum});}catch(e){}});
       var now0=new Date(),segs={0:[],1:[],2:[]},ppos=[],pcol=[];
       recs.forEach(function(r){
         var mm=r.sr.no||r.sr.no_kozai||0.0011,Tmin=(2*Math.PI)/mm,K=40,prev=null;   // one orbital period
@@ -895,7 +937,7 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
       if(state==='live'){el.innerHTML='<span class="dot live"></span>LIVE · CelesTrak · '+info;}
       else if(state==='cache'){el.innerHTML='<span class="dot live"></span>LIVE · CelesTrak (cached) · '+info;}
       else{el.innerHTML='<span class="dot warn"></span>snapshot '+(OG_SNAPSHOT||'')+' · using baked elements';}}
-    function parseTLE(txt){var L=txt.split(/\r?\n/),o=[];for(var i=0;i+2<L.length;i+=3){var l1=L[i+1],l2=L[i+2];if(l1&&l1.charAt(0)==='1'&&l2&&l2.charAt(0)==='2')o.push({l1:l1,l2:l2});}return o;}
+    function parseTLE(txt){var L=txt.split(/\r?\n/),o=[];for(var i=0;i+2<L.length;i+=3){var nm=(L[i]||'').trim(),l1=L[i+1],l2=L[i+2];if(l1&&l1.charAt(0)==='1'&&l2&&l2.charAt(0)==='2')o.push({l1:l1,l2:l2,nm:nm});}return o;}
     function sampleArr(a,n){if(a.length<=n)return a;var o=[],st=a.length/n;for(var i=0;i<n;i++)o.push(a[Math.floor(i*st)]);return o;}
     // instant render from the baked snapshot; HUD stays "fetching…" until the live fetch settles
     buildSats(OG_GLOBE.tles||[]);
@@ -915,25 +957,79 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
           .catch(function(){gi++;tryG();});})();
     })();
     var hi=new THREE.Group();scene.add(hi);
-    function drawConj(g){while(hi.children.length)hi.remove(hi.children[0]);if(!g)return;
-      function arc(a,color){var v=a.map(function(q){var t=toV(q);return new THREE.Vector3(t[0],t[1],t[2])});hi.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(v),new THREE.LineBasicMaterial({color:color,depthWrite:false})))}
+    function drawConj(g,arcsOnly){while(hi.children.length)hi.remove(hi.children[0]);if(!g)return;
+      function arc(a,color){if(!a)return;var v=a.map(function(q){var t=toV(q);return new THREE.Vector3(t[0],t[1],t[2])});hi.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(v),new THREE.LineBasicMaterial({color:color,depthWrite:false})))}
       arc(g.arc_a,0x5cc8ff);arc(g.arc_b,0xff4d8d);
+      if(arcsOnly||!g.point_a||!g.point_b)return;   // scrubbable pairs draw live markers instead
       var ta=toV(g.point_a),tb=toV(g.point_b),pa=new THREE.Vector3(ta[0],ta[1],ta[2]),pb=new THREE.Vector3(tb[0],tb[1],tb[2]);
       [[pa,0x5cc8ff],[pb,0xff4d8d]].forEach(function(m){var d=new THREE.Mesh(new THREE.SphereGeometry(.013,16,16),new THREE.MeshBasicMaterial({color:m[1]}));d.position.copy(m[0]);hi.add(d)});
       var dl=new THREE.Line(new THREE.BufferGeometry().setFromPoints([pa,pb]),new THREE.LineDashedMaterial({color:0xf5a524,dashSize:.03,gapSize:.02,depthWrite:false}));dl.computeLineDistances();hi.add(dl)}
+
+    // --- time-scrubber: live-propagate the selected pair to watch them converge to TCA ---
+    var SCRUB_W=1800;   // ± window (seconds) around TCA
+    var scrubActive=false,scrubDate=null,scrubA=null,scrubB=null,tcaMs=0,playing=false,playRAF=0,sgrp=null;
+    var scrubInput=document.getElementById('scrub'),scrubWrap=document.getElementById('scrubwrap'),
+        scrubDt=document.getElementById('scrubdt'),scrubMissEl=document.getElementById('scrubmiss'),
+        playBtn=document.getElementById('scrubplay'),liveBtn=document.getElementById('scrublive');
+    function fmtDelta(sec){var s=Math.round(sec),sg=s<0?'−':'+';s=Math.abs(s);var m=Math.floor(s/60),ss=s%60;return sg+(m<10?'0':'')+m+':'+(ss<10?'0':'')+ss;}
+    function ensureSgrp(){if(sgrp)return;sgrp=new THREE.Group();scene.add(sgrp);
+      sgrp.mA=new THREE.Mesh(new THREE.SphereGeometry(.018,18,18),new THREE.MeshBasicMaterial({color:0x5cc8ff}));
+      sgrp.mB=new THREE.Mesh(new THREE.SphereGeometry(.018,18,18),new THREE.MeshBasicMaterial({color:0xff4d8d}));
+      sgrp.add(sgrp.mA);sgrp.add(sgrp.mB);sgrp.line=null;}
+    function positionScrub(date){
+      if(!scrubA||!scrubB){if(sgrp)sgrp.visible=false;return null;}
+      ensureSgrp();sgrp.visible=true;
+      var ea=eciKm(scrubA,date),eb=eciKm(scrubB,date);if(!ea||!eb)return null;
+      var va=toV(ea),vb=toV(eb);
+      sgrp.mA.position.set(va[0],va[1],va[2]);sgrp.mB.position.set(vb[0],vb[1],vb[2]);
+      if(sgrp.line){sgrp.remove(sgrp.line);if(sgrp.line.geometry)sgrp.line.geometry.dispose();}
+      sgrp.line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([sgrp.mA.position.clone(),sgrp.mB.position.clone()]),new THREE.LineDashedMaterial({color:0xf5a524,dashSize:.02,gapSize:.014,depthWrite:false}));sgrp.line.computeLineDistances();sgrp.add(sgrp.line);
+      var dx=ea[0]-eb[0],dy=ea[1]-eb[1],dz=ea[2]-eb[2];return Math.sqrt(dx*dx+dy*dy+dz*dz);}
+    function readout(off,miss){if(scrubDt)scrubDt.textContent=fmtDelta(off);if(scrubMissEl)scrubMissEl.textContent=(miss==null?'— km':miss.toFixed(3)+' km');}
+    function primeScrub(off){scrubDate=new Date(tcaMs+off*1000);var m=positionScrub(scrubDate);if(scrubInput)scrubInput.value=off;readout(off,m);}   // draw pair at TCA, scene stays live
+    function setScrub(off){scrubActive=true;scrubDate=new Date(tcaMs+off*1000);var m=positionScrub(scrubDate);if(!reduce)updateSats(scrubDate);if(scrubInput&&+scrubInput.value!==off)scrubInput.value=off;readout(off,m);}
+    function stopPlay(){playing=false;if(playRAF)cancelAnimationFrame(playRAF);playRAF=0;if(playBtn)playBtn.textContent='▶';}
+    function startPlay(){if(reduce||!(scrubA&&scrubB))return;playing=true;if(playBtn)playBtn.textContent='❚❚';var t0=null,dur=7000;
+      (function step(ts){if(!playing)return;if(!t0)t0=ts;var p=(ts-t0)/dur;if(p>=1){setScrub(SCRUB_W);stopPlay();return;}setScrub(Math.round(-SCRUB_W+2*SCRUB_W*p));playRAF=requestAnimationFrame(step);})(performance.now());}
+    function selectGeom(g){stopPlay();scrubA=scrubB=null;
+      tcaMs=g.tca_ms||Date.parse(String(g.tca_utc).replace(' ','T')+'Z')||0;   // tca_ms keeps sub-second precision
+      if(g.l1_a&&g.l2_a&&g.l1_b&&g.l2_b){try{var a=satellite.twoline2satrec(g.l1_a,g.l2_a),b=satellite.twoline2satrec(g.l1_b,g.l2_b);if(a&&!a.error&&b&&!b.error){scrubA=a;scrubB=b;}}catch(e){}}
+      var ok=!!(scrubA&&scrubB&&tcaMs);
+      drawConj(g,ok);updInfo(g);
+      if(scrubWrap)scrubWrap.style.display=ok?'block':'none';
+      scrubActive=false;                       // scene stays live until the user scrubs
+      if(ok){primeScrub(0);}else if(sgrp){sgrp.visible=false;}}
+    if(scrubInput)scrubInput.addEventListener('input',function(){setScrub(+scrubInput.value)});
+    if(playBtn)playBtn.addEventListener('click',function(){playing?stopPlay():startPlay();});
+    if(liveBtn)liveBtn.addEventListener('click',function(){stopPlay();scrubActive=false;if(sgrp)sgrp.visible=false;if(scrubInput)scrubInput.value=0;readout(0,null);if(scrubDt)scrubDt.textContent='live';});
+
+    // --- click a satellite to inspect it (raycast the live point cloud) ---
+    var ray=new THREE.Raycaster();ray.params.Points.threshold=.045;var mouse=new THREE.Vector2(),_downXY=null;
+    function hidePick(){var el=document.getElementById('gpick');if(el)el.style.display='none';}
+    function showPick(rec,x,y){var el=document.getElementById('gpick');if(!el||!rec)return;
+      var e=eciKm(rec.sr,scrubActive?scrubDate:new Date()),alt=e?Math.round(Math.sqrt(e[0]*e[0]+e[1]*e[1]+e[2]*e[2])-6371):'—',bn=['LEO','MEO','HIGH'][rec.b]||'';
+      el.innerHTML='<b>'+esc(rec.nm||('NORAD '+rec.satnum))+'</b><span>NORAD '+rec.satnum+' · '+bn+' · alt '+alt+' km</span>';
+      var host=document.getElementById('globe').getBoundingClientRect();
+      el.style.left=Math.max(8,Math.min(x-host.left+12,host.width-190))+'px';el.style.top=Math.min(y-host.top+12,host.height-60)+'px';el.style.display='block';}
+    renderer.domElement.addEventListener('pointerdown',function(e){_downXY=[e.clientX,e.clientY];});
+    renderer.domElement.addEventListener('pointerup',function(e){if(!_downXY)return;var dx=e.clientX-_downXY[0],dy=e.clientY-_downXY[1];_downXY=null;if(dx*dx+dy*dy>25||!satPoints)return;
+      var r=renderer.domElement.getBoundingClientRect();mouse.x=((e.clientX-r.left)/r.width)*2-1;mouse.y=-((e.clientY-r.top)/r.height)*2+1;ray.setFromCamera(mouse,camera);
+      var hits=ray.intersectObject(satPoints);if(hits.length&&live[hits[0].index])showPick(live[hits[0].index],e.clientX,e.clientY);else hidePick();});
+
     var sel=document.getElementById('conjsel'),ci=document.getElementById('conjinfo');
     function updInfo(g){if(!ci)return;if(!g){ci.innerHTML='';return}
       ci.innerHTML='<div class="ci-lab">SELECTED CONJUNCTION</div><div class="ci-pair"><span class="a">'+esc(g.object_a)+'</span> ↔ <span class="b">'+esc(g.object_b)+'</span></div>'+
         '<div class="ci-grid"><div><span>MISS</span><b>'+g.miss_km.toFixed(2)+' km</b></div><div><span>CLOSING</span><b>'+g.rel_speed_kms.toFixed(1)+' km/s</b></div>'+
-        '<div><span>Pc (assumed cov)</span><b>'+pcStr(g.pc)+'</b></div><div><span>RISK</span><b>'+Math.round(g.risk_score)+'</b></div>'+
+        '<div><span>Pc (modelled cov)</span><b>'+pcStr(g.pc)+'</b></div><div><span>RISK</span><b>'+Math.round(g.risk_score)+'</b></div>'+
         '<div><span>TCA</span><b style="font-size:11px">'+esc(g.tca_utc.slice(5,16))+'</b></div></div>'}
     if(sel&&OG_GEOM&&OG_GEOM.length){OG_GEOM.forEach(function(g,i){var o=document.createElement('option');o.value=i;o.textContent='#'+g.rank+'  '+g.object_a+' ↔ '+g.object_b+'  ('+g.miss_km.toFixed(2)+' km)';sel.appendChild(o)});
-      sel.addEventListener('change',function(){var g=OG_GEOM[+sel.value];drawConj(g);updInfo(g)});drawConj(OG_GEOM[0]);updInfo(OG_GEOM[0])}else if(sel)sel.style.display='none';
+      sel.addEventListener('change',function(){selectGeom(OG_GEOM[+sel.value])});selectGeom(OG_GEOM[0])}else if(sel)sel.style.display='none';
+    globeApi.selectConjByRank=function(rank){if(!OG_GEOM)return false;for(var i=0;i<OG_GEOM.length;i++){if(OG_GEOM[i].rank===rank){if(sel)sel.value=i;selectGeom(OG_GEOM[i]);return true;}}return false;};
     var lastUpd=0;
     function tick(ts){requestAnimationFrame(tick);controls.update();
-      var now=new Date();
-      earth.rotation.y=satellite.gstime(now);          // align mesh Greenwich with TEME Greenwich -> true sub-points
-      if(!reduce && now.getTime()-lastUpd>400){lastUpd=now.getTime();updateSats(now);}   // live positions, throttled
+      var d=scrubActive?scrubDate:new Date();
+      earth.rotation.y=satellite.gstime(d);            // Earth follows scrub time when scrubbing -> geo-consistent
+      if(!scrubActive && !reduce && Date.now()-lastUpd>400){lastUpd=Date.now();updateSats(new Date());}   // live positions, throttled
       renderer.render(scene,camera);}
     requestAnimationFrame(tick);
     globeApi.resize=function(){var w=host.clientWidth,h=host.clientHeight;if(!w||!h)return;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h)};

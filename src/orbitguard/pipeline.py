@@ -102,9 +102,12 @@ def run(
         "runtime_s": round(time.time() - t0, 1),
         "orbitguard_version": __import__("orbitguard").__version__,
         "pc_hbr_m": hbr_m,
-        "pc_sigma_note": ("Foster 2-D Pc under assumed RTN covariance "
-                          "(σ_R≈200m, σ_T≈500m + 1km/day TLE age, σ_N≈200m); "
-                          f"hard-body radius {hbr_m:.0f} m. TLEs carry no covariance."),
+        "pc_sigma_note": ("Foster 2-D Pc under a modelled RTN covariance, "
+                          "altitude- + TLE-age-scaled (σ_R≈200m; σ_T≈500m at epoch, "
+                          "growing ~1km/day at 800km and faster low in LEO; σ_N≈200m "
+                          "growing mildly with age); "
+                          f"hard-body radius {hbr_m:.0f} m. Calibrated to published "
+                          "TLE-error magnitudes (Flohrer 2008), not a per-object fit."),
     }
     sats_by_index = {ev.i: cat.sats[ev.i] for ev in events}
     sats_by_index.update({ev.j: cat.sats[ev.j] for ev in events})

@@ -72,6 +72,36 @@ def test_pc_decreases_as_miss_grows():
     assert near > far                          # closer pass -> higher Pc
 
 
+# --- assumed_rtn_sigma: altitude + age scaled covariance model -----------------
+def test_assumed_sigma_returns_triple_meters():
+    s = risk_pc.assumed_rtn_sigma(0.0, 550.0)
+    assert len(s) == 3
+    sr, st, sn = s
+    # at epoch the model returns the documented baselines (metres)
+    assert abs(sr - risk_pc.DEFAULT_SIGMA_R_M) < 1e-9
+    assert abs(st - risk_pc.DEFAULT_SIGMA_T_M) < 1e-6
+    assert abs(sn - risk_pc.DEFAULT_SIGMA_N_M) < 1e-6
+
+
+def test_along_track_grows_with_age():
+    young = risk_pc.assumed_rtn_sigma(0.0, 800.0)[1]
+    old = risk_pc.assumed_rtn_sigma(5.0, 800.0)[1]
+    assert old > young                              # σ_T grows with TLE age
+
+
+def test_low_altitude_has_larger_along_track():
+    age = 3.0
+    low = risk_pc.assumed_rtn_sigma(age, 400.0)[1]   # deep LEO, heavy drag
+    high = risk_pc.assumed_rtn_sigma(age, 1500.0)[1]  # high LEO, light drag
+    assert low > high                                # drag → faster along-track growth
+
+
+def test_cross_track_grows_with_age():
+    young = risk_pc.assumed_rtn_sigma(0.0, 800.0)[2]
+    old = risk_pc.assumed_rtn_sigma(6.0, 800.0)[2]
+    assert old > young                              # σ_N grows mildly with age
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     passed = 0

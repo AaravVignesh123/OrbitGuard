@@ -67,8 +67,8 @@ def parse_args(argv=None):
                    help="Also write docs/index.html (the GitHub Pages source) each run")
     p.add_argument("--no-dashboard", action="store_true",
                    help="Skip building the HTML dashboard")
-    p.add_argument("--top-geometry", type=int, default=5,
-                   help="How many top events to embed 3D geometry for (default: 5)")
+    p.add_argument("--top-geometry", type=int, default=25,
+                   help="How many top events to embed 3D geometry + TLEs for (default: 25)")
     p.add_argument("--hbr", type=float, default=10.0, dest="hbr_m",
                    help="Combined hard-body radius in metres for the Pc calc (default: 10)")
     p.add_argument("--quiet", action="store_true", help="Suppress progress logging")
