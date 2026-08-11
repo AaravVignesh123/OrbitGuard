@@ -79,6 +79,16 @@ def run(
     log("[5/5] Ranking by risk ...")
     ranked = _risk.rank_events(refined)
 
+    # Phase 4 (experimental): if a trained model is present, score the top events.
+    try:
+        from .ml import features as _mlfeatures
+        _model = _mlfeatures.load_model()
+        if _model is not None:
+            n = _mlfeatures.score_ranked(ranked, _model, top_k=100)
+            log(f"      scored {n} events with the learned model (experimental)")
+    except Exception:
+        pass
+
     meta = {
         "group": group,
         "hours": hours,

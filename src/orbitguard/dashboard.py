@@ -141,7 +141,7 @@ def _overview(summary, meta, events) -> str:
         + f'<div><span>THRESHOLD</span><b>{meta.get("threshold_km")} km</b></div>'
         + f'<div><span>VALID / SCREENED</span><b>{meta.get("n_valid","—")} / {meta.get("n_objects",0):,}</b></div>'
         + f'<div><span>RUNTIME</span><b>{meta.get("runtime_s","—")} s</b></div>'
-        + '<div><span>PIPELINE</span><b class="ok">screen → refine → rank ✓</b></div>'
+        + '<div style="grid-column:1/-1"><span>PIPELINE</span><b class="ok">screen → refine → Pc → rank ✓</b></div>'
         + '</div></div>'
     )
 
@@ -263,8 +263,18 @@ def _model_view(comp) -> str:
   <div class="panel">
     <div class="p-head">TASK</div>
     <div class="note">Predict each conjunction's <b>final</b> collision probability from CDMs issued ≥2 days
-    before TCA, on the ESA Kelvins dataset ({b['n_events']:,} events, {b['n_high_risk']} high-risk).
-    The model scores Kelvins CDMs, not yet our live globe (that's Phase 4).</div>
+    before TCA, on the ESA Kelvins dataset ({b['n_events']:,} events, {b['n_high_risk']} high-risk).</div>
+  </div>
+  <div class="panel span2">
+    <div class="p-head">PHASE 4 · SCORING OUR OWN LIVE CONJUNCTIONS (EXPERIMENTAL)</div>
+    <div class="note">The bridge (<code>ml/features.bridge_from_screener</code>) is implemented: it maps a live
+    screener event into the model's feature space and scores it. But our TLE screener can honestly produce
+    only <b>9 of the model's 110 features</b> — the rest, including the model's single most important input
+    (the prior CDM <code>risk</code> estimate) and all orbit-determination-quality columns, have no
+    TLE-derived source and are imputed. With those missing, the learned score is <b>near-constant</b> across
+    events, so it is <b>not surfaced per-conjunction</b> (it would be misleading). It is kept in the report
+    JSON for research. The honest conclusion: a covariance-based <b>Pc</b> (see the Conjunctions tab) is the
+    right live risk signal today; the learned model needs real CDMs to add value. That gap is the point.</div>
   </div>
 </div>
 """
@@ -317,7 +327,8 @@ def _validation_view(val) -> str:
   <table class="mtable"><thead><tr><th>conjunction</th><th>reported (km)</th><th>truth (km)</th><th>Δ (m)</th></tr></thead>
   <tbody>{rows}</tbody></table>
   <div class="note">Both columns computed from the same TLEs by <b>separate code paths</b> — this checks the
-  refinement math, not the TLE physics. For physical validation, cross-check against CelesTrak SOCRATES.</div></div>
+  refinement math, not the TLE physics.</div></div>
+{_socrates_panel(val.get("socrates"))}
 """
 
     return f"""
@@ -328,6 +339,32 @@ def _validation_view(val) -> str:
   see the <a data-view="about">About</a> page for scope and honest limits.</div></div>
 {checks}
 </div>
+"""
+
+
+def _socrates_panel(soc) -> str:
+    if not soc or soc.get("status") != "ok" or not soc.get("events"):
+        msg = (soc or {}).get("status", "not run")
+        return (f'<div class="panel"><div class="p-head">◈ PHYSICAL VALIDATION · CelesTrak SOCRATES</div>'
+                f'<div class="note">Independent cross-check against the authoritative feed — '
+                f'run <code>python -m orbitguard.validate</code> with a network connection. Status: {html.escape(str(msg))}.</div></div>')
+    rows = "".join(
+        f'<tr><td>{html.escape(e["pair"])}</td><td class="mono">{e["tca_utc"][5:16]}</td>'
+        f'<td class="num">{e["socrates_miss_km"]:.3f}</td><td class="num">{e["our_miss_km"]:.3f}</td>'
+        f'<td class="num vok">{e["miss_diff_m"]:.0f}</td>'
+        f'<td class="num">{e["socrates_max_prob"]:.1e}</td><td class="num">{e["our_max_pc"]:.1e}</td></tr>'
+        for e in soc["events"])
+    med = soc.get("median_miss_diff_m")
+    return f"""
+<div class="panel"><div class="p-head">◈ PHYSICAL VALIDATION · CelesTrak SOCRATES (authoritative feed)</div>
+  <table class="mtable"><thead><tr><th>conjunction</th><th>TCA</th><th>SOCRATES miss (km)</th>
+  <th>our miss (km)</th><th>Δ (m)</th><th>SOCRATES maxPc</th><th>our maxPc</th></tr></thead>
+  <tbody>{rows}</tbody></table>
+  <div class="note">We independently reproduce SOCRATES' soonest conjunctions (its objects, our freshly-fetched
+  TLEs, our propagation + Pc). Miss distances agree to <b>~{med:.0f} m median</b> — order-of-magnitude
+  agreement against the reference; larger scatter comes from element-set freshness (volatile debris),
+  not method error. Max-Pc uses SOCRATES' documented RTN covariance (100/300/100 m) for an apples-to-apples
+  comparison. This validates the <em>physics</em>, not just our internal math.</div></div>
 """
 
 
@@ -361,8 +398,9 @@ def _about_view(summary, meta) -> str:
     </div>
     <p class="disclaimer">Scope: a screening / analysis <b>demonstrator</b> on public TLEs — <b>not</b> an
     operational or safety-certified system, and not a replacement for covariance-based services (CARA,
-    SOCRATES, commercial SSA). Public TLEs are ~km-accurate with no covariance, so the risk score is an
-    explicit proxy, not a formal probability of collision. Validate against CelesTrak SOCRATES before any
+    SOCRATES, commercial SSA). Public TLEs are ~km-accurate and carry no covariance, so the <b>Pc</b> is a
+    Foster 2-D probability under an <em>assumed</em> covariance — an order-of-magnitude estimate,
+    cross-checked against SOCRATES in <b>Methodology</b>. Validate against CelesTrak SOCRATES before any
     operational use.</p>
   </div>
   <div class="panel">
@@ -388,6 +426,11 @@ _PAGE = r"""<!doctype html>
   --accent:#5cc8ff; --accent2:#7a5cff; --amber:#f5a524; --green:#3ad39a; --pink:#ff4d8d;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace; }
+:root[data-theme="light"]{
+  --bg:#eef1f7; --bg1:#e7ebf3; --panel:#ffffff; --panel2:#f4f7fb; --rail:#e9edf4;
+  --hair:rgba(30,50,90,.14); --hair2:rgba(30,50,90,.26);
+  --ink:#111a2b; --dim:#46536e; --faint:#7d89a2;
+  --accent:#1683c9; --accent-ink:#ffffff; --amber:#b9760a; --green:#0f9e60; --pink:#d63268; }
 *{box-sizing:border-box} html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;
   font-feature-settings:"tnum" 1;overflow:hidden}
@@ -424,6 +467,8 @@ a{color:var(--accent);text-decoration:none;cursor:pointer}
 .tb-meta{font-family:var(--mono);font-size:11.5px;color:var(--faint);display:flex;gap:16px;flex-wrap:wrap}
 .tb-meta b{color:var(--dim);font-weight:500}
 .tb-live{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--green);white-space:nowrap}
+.themetgl{background:transparent;border:1px solid var(--hair2);color:var(--dim);border-radius:8px;width:30px;height:26px;cursor:pointer;font-size:14px;line-height:1}
+.themetgl:hover{color:var(--ink);border-color:var(--accent)}
 .content{flex:1;overflow-y:auto;overflow-x:hidden;padding:22px}
 .content.flush{padding:0}
 .view{display:none}.view.active{display:block;animation:fade .3s ease}
@@ -571,6 +616,7 @@ td.vok{color:var(--green)}
       <div class="tb-title" id="tbtitle">Overview</div>
       <div class="tb-meta"><span>catalogue <b>__GROUP__</b></span><span>threshold <b>__THRESH__km</b></span><span>screened <b>__GENERATED__</b> UTC</span></div>
       <div class="tb-live" title="current time — live clock"><span class="dot live"></span><span id="utcclock">--:--:-- UTC</span></div>
+      <button id="themetgl" class="themetgl" title="toggle light / dark" aria-label="toggle theme">◐</button>
     </div>
     <div class="content" id="content">
       <div class="view active" id="view-overview">__OVERVIEW__</div>
@@ -607,6 +653,15 @@ var OG_EARTH_TEX="data:image/jpeg;base64,__EARTH_TEX__";
   // live UTC clock (top-right) — proves the page runs on real current time
   function tickClock(){var el=document.getElementById('utcclock');if(el){el.textContent=new Date().toISOString().slice(11,19)+' UTC';}}
   tickClock();setInterval(tickClock,1000);
+
+  // light / dark theme (persisted)
+  try{var savedTheme=localStorage.getItem('og_theme');if(savedTheme)document.documentElement.setAttribute('data-theme',savedTheme);}catch(e){}
+  var tgl=document.getElementById('themetgl');
+  if(tgl)tgl.addEventListener('click',function(){
+    var cur=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';
+    document.documentElement.setAttribute('data-theme',cur);
+    try{localStorage.setItem('og_theme',cur);}catch(e){}
+  });
 
   // nav / view switching
   var items=document.querySelectorAll('.nitem'),views=document.querySelectorAll('.view'),content=document.getElementById('content');

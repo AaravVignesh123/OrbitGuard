@@ -1,0 +1,22 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install core deps
+        run: pip install numpy scipy pandas skyfield sgp4
+      - name: Pipeline correctness tests
+        run: python tests/test_pipeline.py
+      - name: Probability-of-collision tests
+        run: python tests/test_pc.py

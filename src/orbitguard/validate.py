@@ -85,8 +85,17 @@ def validate_run(report_path="out/report_latest.json", data_dir="data",
             "events": rows,
         },
         "velocity": {"max_error_kms": round(max(vel_err), 5) if vel_err else None},
-        "socrates": {"status": "manual — compare a few events at celestrak.org/SOCRATES"},
+        "socrates": _socrates_block(ts),
     }
+
+
+def _socrates_block(ts) -> dict:
+    """Cross-check against CelesTrak SOCRATES (network; best-effort)."""
+    try:
+        from orbitguard import socrates
+        return socrates.cross_check(ts=ts)
+    except Exception as e:
+        return {"status": f"unavailable: {type(e).__name__}", "events": []}
 
 
 def main() -> int:

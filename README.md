@@ -1,18 +1,25 @@
 # 🛰️ OrbitGuard
 
-**Autonomous orbital collision-avoidance — a conjunction screener for low-Earth orbit.**
+**An open, transparent, reproducible reference implementation of an orbital
+conjunction-screening + collision-risk pipeline.**
 
-OrbitGuard pulls a live satellite catalog, propagates every object onto one
-shared clock, screens the whole population for close approaches
+![tests](https://github.com/AaravVignesh123/OrbitGuard/actions/workflows/tests.yml/badge.svg)
+
+OrbitGuard pulls a live satellite catalogue, propagates every object onto one
+shared inertial frame, screens the whole population for close approaches
 (*conjunctions*), sharpens each flag into a precise time-of-closest-approach and
-miss distance, and ranks the results by a risk proxy — then writes a CSV, a JSON
-report, and a self-contained interactive dashboard.
+miss distance, computes a real **probability of collision** (Foster 2-D, under an
+assumed covariance), and ranks the results — then writes a CSV, a JSON report, and
+a self-contained interactive console with a live 3-D globe.
 
-> **v1 definition:** *Given a fresh catalog and a time window, output a ranked
-> list of predicted close approaches (pair, time of closest approach, miss
-> distance).* ✅
+Every stage is **validated** — screening equals brute force; refined miss agrees
+with an independent search to < 12 m; and results are cross-checked against
+**CelesTrak SOCRATES**. See [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
-<p align="center"><em>One command, catalog → ranked conjunction report + dashboard.</em></p>
+> **Live:** https://aaravvignesh123.github.io/OrbitGuard/  ·  **Method + limits:**
+> [METHODOLOGY](docs/METHODOLOGY.md)
+
+<p align="center"><em>One command, catalogue → ranked conjunction report (with Pc) + globe.</em></p>
 
 ---
 
@@ -27,8 +34,8 @@ coarse flag into a trustworthy number — is exactly what OrbitGuard v1 does.
 ## What v1 does
 
 ```
-CelesTrak TLEs ─► propagate ─► KD-tree screen ─► refine TCA ─► risk rank ─► report
-   (catalog)      (N×T×3)      (close pairs)     (parabola)    (proxy)     CSV/JSON/HTML
+CelesTrak TLEs ─► propagate ─► KD-tree screen ─► refine TCA ─► Pc (Foster 2-D) ─► rank ─► report
+   (catalog)      (N×T×3)      (close pairs)    (analytic)    (assumed cov)     (proxy)   CSV/JSON/HTML
 ```
 
 1. **Catalog** — download a CelesTrak group (`active`, `starlink`, `stations`, …),

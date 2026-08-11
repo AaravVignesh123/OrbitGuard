@@ -50,6 +50,7 @@ class RefinedEvent:
     alt_km: float  # geocentric radius midpoint minus Earth radius, rough altitude
     pc: float = float("nan")          # Foster 2-D Pc under assumed covariance
     pc_max: float = float("nan")      # worst-case (max) Pc
+    ml_risk: float = float("nan")     # Phase-4 experimental learned risk (log10 Pc)
     rel_pos_rtn_km: tuple = (0.0, 0.0, 0.0)   # miss vector in object-A RTN frame
     rel_vel_rtn_kms: tuple = (0.0, 0.0, 0.0)  # relative velocity in object-A RTN frame
 
